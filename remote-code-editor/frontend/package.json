@@ -1,0 +1,23 @@
+{
+  "name": "remote-code-editor-frontend",
+  "version": "1.0.0",
+  "description": "远程代码编辑器前端 - Vue 3 + Monaco Editor",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@element-plus/icons-vue": "^2.3.1",
+    "axios": "^1.6.5",
+    "element-plus": "^2.5.3",
+    "highlight.js": "^11.11.1",
+    "monaco-editor": "^0.45.0",
+    "vue": "^3.4.15"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.3",
+    "vite": "^5.0.11"
+  }
+}
