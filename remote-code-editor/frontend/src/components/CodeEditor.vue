@@ -23,6 +23,7 @@ import { ElMessage } from 'element-plus'
 import { Loading } from '@element-plus/icons-vue'
 import * as monaco from 'monaco-editor'
 import axios from 'axios'
+import { loadHLSLTextMate, defineEnhancedTheme } from '../utils/textmate-loader'
 
 // 定义事件
 const emit = defineEmits(['selection-change', 'cursor-change'])
@@ -50,6 +51,17 @@ const editor = shallowRef(null)
 
 // 自动保存相关
 const autoSaveTimer = ref(null)
+
+// 初始化 TextMate 语法
+async function initTextMate() {
+  // 加载 HLSL TextMate 语法
+  loadHLSLTextMate()
+  
+  // 定义增强主题
+  defineEnhancedTheme()
+  
+  console.log('✅ Shader 语法高亮已启用 (TextMate 增强版)')
+}
 
 // 初始化编辑器
 onMounted(() => {
@@ -82,49 +94,16 @@ watch(() => props.fontSize, (newSize) => {
 })
 
 // 初始化Monaco Editor
-function initEditor() {
+async function initEditor() {
   if (!editorContainer.value) return
 
-  // 定义自定义暗色主题（增强代码高亮）
-  monaco.editor.defineTheme('enhanced-dark', {
-    base: 'vs-dark',
-    inherit: true,
-    rules: [
-      { token: 'comment', foreground: '5c6370', fontStyle: 'italic' },
-      { token: 'keyword', foreground: 'c678dd' },
-      { token: 'string', foreground: '98c379' },
-      { token: 'string.quote', foreground: '98c379' },
-      { token: 'string.escape', foreground: '56b6c2' },
-      { token: 'number', foreground: 'd19a66' },
-      { token: 'number.hex', foreground: 'd19a66' },
-      { token: 'number.binary', foreground: 'd19a66' },
-      { token: 'number.float', foreground: 'd19a66' },
-      { token: 'type', foreground: 'e5c07b' },
-      { token: 'function', foreground: '61afef' },
-      { token: 'variable', foreground: 'e06c75' },
-      { token: 'identifier', foreground: 'e06c75' },
-      { token: 'constant', foreground: 'd19a66' },
-      { token: 'operator', foreground: '56b6c2' },
-      { token: 'delimiter', foreground: 'abb2bf' }
-    ],
-    colors: {
-      'editor.background': '#1e1e1e',
-      'editor.foreground': '#abb2bf',
-      'editor.lineHighlightBackground': '#2c313c',
-      'editor.selectionBackground': '#3e4451',
-      'editorCursor.foreground': '#528bff',
-      'editorLineNumber.foreground': '#495162',
-      'editorLineNumber.activeForeground': '#c0c0c0',
-      'editor.selectionHighlightBackground': '#3e445166',
-      'editorBracketMatch.background': '#3e445166',
-      'editorBracketMatch.border': '#528bff'
-    }
-  })
+  // 初始化 TextMate 语法
+  await initTextMate()
 
   editor.value = monaco.editor.create(editorContainer.value, {
     value: '',
     language: 'plaintext',
-    theme: 'enhanced-dark',
+    theme: 'enhanced-dark-hlsl',  // 使用新的增强主题
     automaticLayout: true,
     fontSize: props.fontSize,
     fontFamily: "'Fira Code', 'Consolas', 'Monaco', 'Courier New', monospace",
@@ -154,7 +133,7 @@ function initEditor() {
     },
     suggestOnTriggerCharacters: true,
     acceptSuggestionOnCommitCharacter: true,
-    acceptSuggestionOnEnter: 'on',
+    acceptSuggestionOnEnter: 'off',
     snippetSuggestions: 'top'
   })
   
@@ -223,6 +202,22 @@ async function loadFile(file) {
       params: { path: file.path }
     })
     
+    // 检查是否为二进制文件
+    if (response.data.is_binary) {
+      ElMessage.warning('该文件是二进制文件，无法在编辑器中显示')
+      // 显示文件信息而非内容
+      const size = response.data.size || 0
+      const sizeStr = size > 1024 * 1024 
+        ? (size / 1024 / 1024).toFixed(2) + ' MB' 
+        : (size / 1024).toFixed(2) + ' KB'
+      editor.value.setValue(`[二进制文件]\n\n文件: ${file.path}\n类型: ${response.data.mime_type || '未知'}\n大小: ${sizeStr}\n\n此文件无法在编辑器中编辑。`)
+      monaco.editor.setModelLanguage(editor.value.getModel(), 'plaintext')
+      currentFile.value = null // 不允许编辑二进制文件
+      hasUnsavedChanges.value = false
+      loading.value = false
+      return
+    }
+    
     currentFile.value = file
     
     // 设置编辑器内容和语言
@@ -273,7 +268,22 @@ function getLanguageFromPath(path) {
     'xml': 'xml',
     'sh': 'shell',
     'bash': 'shell',
-    'ps1': 'powershell'
+    'ps1': 'powershell',
+    // Shader 文件
+    'shader': 'hlsl',      // Unity Shader
+    'glsl': 'glsl',        // OpenGL Shader
+    'vert': 'glsl',        // GLSL Vertex Shader
+    'frag': 'glsl',        // GLSL Fragment Shader
+    'geom': 'glsl',        // GLSL Geometry Shader
+    'comp': 'glsl',        // GLSL Compute Shader
+    'tesc': 'glsl',        // GLSL Tessellation Control
+    'tese': 'glsl',        // GLSL Tessellation Evaluation
+    'hlsl': 'hlsl',        // DirectX Shader
+    'fx': 'hlsl',          // DirectX Effect
+    'cg': 'hlsl',          // NVIDIA Cg (similar to HLSL)
+    'cginc': 'hlsl',       // Unity CG Include
+    'compute': 'glsl',     // Unity Compute Shader
+    'raytrace': 'hlsl',    // Ray Tracing Shader
   }
   return langMap[ext] || 'plaintext'
 }
@@ -330,25 +340,52 @@ function registerAICompletionProvider() {
             
             // 获取当前已输入的单词
             const currentWord = textBeforeCursor.substring(wordStart)
-            
+            // 获取光标前的完整文本（可能包含非单词字符如括号）
+            const fullTextBeforeCursor = textBeforeCursor
+
             return {
               suggestions: response.data.suggestions.map((suggestion, index) => {
-                // 检查建议是否以当前输入的单词开头
                 let insertText = suggestion.text
                 let rangeStartColumn = position.column
-                
-                // 如果建议以当前单词开头，则替换当前单词
-                if (currentWord && suggestion.text.startsWith(currentWord)) {
-                  rangeStartColumn = wordStart + 1 // +1 因为 column 是 1-based
+
+                // 检查建议文本与光标前已输入文本的重叠（后缀匹配）
+                // 例如：光标前文本 "int result"，AI返回 "int result = a;"
+                // 需要找到已输入文本的后缀与建议文本的前缀的最长重叠
+                if (fullTextBeforeCursor.length > 0 && suggestion.text.length > 0) {
+                  let bestOverlap = 0
+                  const maxCheck = Math.min(fullTextBeforeCursor.length, suggestion.text.length)
+                  
+                  // 从长到短检查：已输入文本的后缀 是否等于 建议文本的前缀
+                  for (let len = maxCheck; len >= 1; len--) {
+                    const suffix = fullTextBeforeCursor.substring(fullTextBeforeCursor.length - len)
+                    const prefix = suggestion.text.substring(0, len)
+                    if (suffix === prefix) {
+                      bestOverlap = len
+                      break
+                    }
+                  }
+                  
+                  if (bestOverlap > 0) {
+                    // 有重叠：将range起始位置回退到重叠开始处，插入完整建议文本
+                    // 这样Monaco会用完整建议文本替换从rangeStartColumn到光标位置的内容
+                    rangeStartColumn = position.column - bestOverlap
+                    insertText = suggestion.text
+                  }
                 }
                 
+                // 如果没有后缀重叠，再检查建议是否以当前单词开头
+                if (rangeStartColumn === position.column && currentWord && suggestion.text.startsWith(currentWord)) {
+                  rangeStartColumn = wordStart + 1
+                  insertText = suggestion.text
+                }
+
                 return {
                   label: suggestion.text,
                   kind: monaco.languages.CompletionItemKind.Snippet,
                   insertText: insertText,
                   detail: '✨ AI建议',
                   documentation: suggestion.description || 'AI生成的代码补全',
-                  sortText: `0${index}`, // 优先显示AI建议
+                  sortText: `0${index}`,
                   range: {
                     startLineNumber: position.lineNumber,
                     startColumn: rangeStartColumn,
@@ -433,6 +470,32 @@ function getSelectedText() {
   return ''
 }
 
+// 重新加载当前文件
+async function reloadFile() {
+  if (!currentFile.value) {
+    console.log('[CodeEditor] reloadFile: 没有当前文件')
+    return
+  }
+  
+  console.log('[CodeEditor] 开始重新加载文件:', currentFile.value.path)
+  
+  // 保存当前光标位置
+  const position = editor.value?.getPosition()
+  console.log('[CodeEditor] 保存的光标位置:', position)
+  
+  // 重新加载文件
+  await loadFile(currentFile.value)
+  console.log('[CodeEditor] 文件加载完成')
+  
+  // 恢复光标位置
+  if (position && editor.value) {
+    editor.value.setPosition(position)
+    console.log('[CodeEditor] 恢复光标位置')
+  }
+  
+  ElMessage.success('文件已刷新')
+}
+
 // 暴露方法
 defineExpose({
   insertCode,
@@ -441,6 +504,7 @@ defineExpose({
   getSelectedText,
   loadFile,
   saveFile,
+  reloadFile,
   triggerFind,
   triggerReplace,
   goToLine

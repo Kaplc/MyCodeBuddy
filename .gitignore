@@ -1,0 +1,36 @@
+# 环境变量文件（包含敏感信息）
+.env
+*.env
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Node
+node_modules/
+npm-debug.log*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 日志
+*.log
+logs/
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 工作区（用户数据）
+remote-code-editor/workspaces/*/
+!remote-code-editor/workspaces/default/.gitkeep
