@@ -71,8 +71,9 @@ def read_file(request):
         return JsonResponse({'error': '缺少path参数'}, status=400)
 
     try:
-        content = sync_to_async(file_service.read_file(path))
-        return JsonResponse({'path': path, 'content': content})
+        result = sync_to_async(file_service.read_file(path))
+        # result 包含 content, is_binary, mime_type 等信息
+        return JsonResponse({'path': path, **result})
     except FileNotFoundError:
         return JsonResponse({'error': f'文件不存在: {path}'}, status=404)
     except IsADirectoryError:
@@ -193,9 +194,38 @@ def delete_file_or_dir(request):
 def check_exists(request):
     """检查文件或目录是否存在"""
     path = request.GET.get('path', '')
-    
+
     if not path:
         return JsonResponse({'error': '缺少path参数'}, status=400)
-    
+
     exists = sync_to_async(file_service.exists(path))
     return JsonResponse({'exists': exists, 'path': path})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def copy_file_or_dir(request):
+    """复制文件或目录"""
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'error': '无效的JSON数据'}, status=400)
+
+    source_path = data.get('source_path', '')
+    target_path = data.get('target_path', '')
+    is_dir = data.get('is_dir', False)
+
+    if not source_path or not target_path:
+        return JsonResponse({'error': '缺少参数'}, status=400)
+
+    try:
+        result = sync_to_async(file_service.copy(source_path, target_path, is_dir))
+        return JsonResponse({'success': True, 'new_path': result})
+    except FileNotFoundError:
+        return JsonResponse({'error': f'源文件或目录不存在: {source_path}'}, status=404)
+    except FileExistsError:
+        return JsonResponse({'error': f'目标文件或目录已存在: {target_path}'}, status=409)
+    except PermissionError:
+        return JsonResponse({'error': '无权限复制'}, status=403)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)

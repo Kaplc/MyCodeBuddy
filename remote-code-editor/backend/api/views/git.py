@@ -82,8 +82,14 @@ def git_list_github_repos(request):
 @csrf_exempt
 @require_http_methods(["POST"])
 def git_clone(request):
-    """克隆远程仓库（使用系统Git凭据）"""
+    """克隆远程仓库（使用系统Git凭据），克隆成功后自动切换工作区"""
+    global git_service
     import json
+    from pathlib import Path
+    from django.conf import settings
+    from services.file_service import FileService
+    from services.git_service import GitService
+    
     try:
         data = json.loads(request.body)
     except json.JSONDecodeError:
@@ -96,6 +102,51 @@ def git_clone(request):
     
     try:
         result = sync_to_async(git_service.clone(repo_url))
+        
+        # 如果克隆成功，自动切换工作区到新仓库
+        if result.get('success') and result.get('path'):
+            workspace_path = result['path']
+            
+            # 更新settings中的WORKSPACE_PATH
+            settings.WORKSPACE_PATH = workspace_path
+            
+            # 更新file_service和git_service的工作区
+            from . import files
+            files.file_service = FileService(workspace_path)
+            git_service = GitService(workspace_path)
+            
+            # 保存到配置文件
+            config_file = Path(settings.BASE_DIR) / 'workspace_config.json'
+            config = {}
+            if config_file.exists():
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+            
+            config['workspace_path'] = workspace_path
+            
+            # 更新工作区列表
+            workspaces = config.get('workspaces', [])
+            normalized_path = workspace_path.replace('\\', '/').lower()
+            
+            unique_workspaces = []
+            normalized_list = []
+            for ws in workspaces:
+                norm_ws = ws.replace('\\', '/').lower()
+                if norm_ws not in normalized_list:
+                    normalized_list.append(norm_ws)
+                    unique_workspaces.append(ws)
+            
+            if normalized_path not in normalized_list:
+                unique_workspaces.append(workspace_path)
+            
+            config['workspaces'] = unique_workspaces
+            with open(config_file, 'w', encoding='utf-8') as f:
+                json.dump(config, f, ensure_ascii=False, indent=2)
+            
+            # 在返回结果中添加工作区切换信息
+            result['workspace_changed'] = True
+            result['workspace'] = workspace_path
+        
         return JsonResponse(result)
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)

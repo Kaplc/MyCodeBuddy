@@ -22,7 +22,8 @@ provider:
 帮助用户获取和分析前端日志，用于诊断前端错误。
 
 ## 日志文件位置
-- **日志文件路径**: `remote-code-editor/backend/logs/django.log`
+- **前端日志路径**: `remote-code-editor/backend/logs/frontend.log`
+- **后端日志路径**: `remote-code-editor/backend/logs/django.log`
 - **日志标识**: 前端日志以 `[前端日志]` 开头
 
 ## 使用方法
@@ -30,32 +31,32 @@ provider:
 ### 1. 查看所有前端日志
 ```bash
 # Windows PowerShell
-Select-String -Path "remote-code-editor\backend\logs\django.log" -Pattern "前端日志" | Select-Object -Last 50
+Select-String -Path "remote-code-editor\backend\logs\frontend.log" -Pattern "前端日志" | Select-Object -Last 50
 
 # 或者使用 Get-Content
-Get-Content "remote-code-editor\backend\logs\django.log" | Select-String "前端日志"
+Get-Content "remote-code-editor\backend\logs\frontend.log" | Select-String "前端日志"
 ```
 
 ### 2. 查看最近的前端错误日志
 ```bash
-Select-String -Path "remote-code-editor\backend\logs\django.log" -Pattern "\[前端日志\].*\[ERROR\]" | Select-Object -Last 20
+Select-String -Path "remote-code-editor\backend\logs\frontend.log" -Pattern "\[前端日志\].*\[ERROR\]" | Select-Object -Last 20
 ```
 
 ### 3. 实时监控前端日志
 ```bash
-Get-Content "remote-code-editor\backend\logs\django.log" -Wait | Select-String "前端日志"
+Get-Content "remote-code-editor\backend\logs\frontend.log" -Wait | Select-String "前端日志"
 ```
 
 ### 4. 按日志级别过滤
 ```bash
 # 错误日志
-Select-String -Path "remote-code-editor\backend\logs\django.log" -Pattern "\[前端日志\].*\[ERROR\]"
+Select-String -Path "remote-code-editor\backend\logs\frontend.log" -Pattern "\[前端日志\].*\[ERROR\]"
 
 # 警告日志
-Select-String -Path "remote-code-editor\backend\logs\django.log" -Pattern "\[前端日志\].*\[WARN\]"
+Select-String -Path "remote-code-editor\backend\logs\frontend.log" -Pattern "\[前端日志\].*\[WARN\]"
 
 # 信息日志
-Select-String -Path "remote-code-editor\backend\logs\django.log" -Pattern "\[前端日志\].*\[INFO\]"
+Select-String -Path "remote-code-editor\backend\logs\frontend.log" -Pattern "\[前端日志\].*\[INFO\]"
 ```
 
 ## 日志格式

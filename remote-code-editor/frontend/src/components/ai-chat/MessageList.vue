@@ -2,6 +2,7 @@
   <div class="message-list-wrapper">
     <div ref="containerRef" class="messages-container">
     <!-- 空状态 -->
+    <!-- 空状态 -->
     <div v-if="messages.length === 0" class="empty-state">
       <el-icon><ChatLineRound /></el-icon>
       <p>开始与AI助手对话</p>
@@ -143,13 +144,20 @@
       </div>
     </div>
     </div>
+    
+    <!-- 滚动到底部按钮 -->
+    <transition name="fade">
+      <div v-if="showScrollToBottom" class="scroll-to-bottom" @click="scrollToBottom(true)" title="滚动到底部 (Ctrl+End)">
+        <el-icon><ArrowDown /></el-icon>
+      </div>
+    </transition>
   </div>
 </template>
 
 <script setup>
-import { ref, watch, nextTick, onMounted, computed } from 'vue'
+import { ref, watch, nextTick, onMounted, computed, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { ChatLineRound, DocumentCopy, CopyDocument } from '@element-plus/icons-vue'
+import { ChatLineRound, DocumentCopy, CopyDocument, ArrowDown } from '@element-plus/icons-vue'
 import hljs from 'highlight.js/lib/core'
 import javascript from 'highlight.js/lib/languages/javascript'
 import python from 'highlight.js/lib/languages/python'
@@ -220,6 +228,10 @@ const containerRef = ref(null)
 // 思考过程展开/折叠状态
 const expandedThinking = ref({})
 const expandedToolExecutions = ref({})
+
+// 智能滚动控制
+const isUserScrolling = ref(false)
+const showScrollToBottom = ref(false)
 
 // 工具名称映射
 const toolDisplayNames = {
@@ -347,12 +359,24 @@ function resetTypewriter() {
 }
 
 // 监听流式结束，重置状态
-watch(() => props.isStreaming, (newVal) => {
-  if (!newVal) {
-    // 流式结束时，确保显示所有内容
-    displayReasoning.value = props.streamingReasoning
-    displayContent.value = props.streamingContent
+watch(() => props.isStreaming, (newVal, oldVal) => {
+  if (newVal) {
+    // 新的流式响应开始，重置打字机状态
     resetTypewriter()
+  } else {
+    // 用户中断时，streamingContent 可能已被清空
+    // 此时应保持当前已显示的内容，而不是用空字符串覆盖
+    if (props.streamingReasoning) {
+      displayReasoning.value = props.streamingReasoning
+    }
+    if (props.streamingContent) {
+      displayContent.value = props.streamingContent
+    }
+    // 停止打字机定时器，但保留当前显示的内容
+    if (typingTimer) {
+      clearInterval(typingTimer)
+      typingTimer = null
+    }
   }
 })
 
@@ -362,20 +386,74 @@ const isTypingReasoning = computed(() => {
          currentReasoningIndex.value < props.streamingReasoning.length
 })
 
-// 监听消息变化，自动滚动到底部
+// 监听消息变化，智能滚动到底部
 watch(() => [props.messages.length, props.streamingContent, props.streamingReasoning, props.toolExecutions.length], () => {
-  scrollToBottom()
+  // 只有在用户没有手动滚动时才自动滚动
+  if (!isUserScrolling.value) {
+    scrollToBottom()
+  }
 }, { deep: true })
 
 onMounted(() => {
   scrollToBottom()
+  // 监听滚动事件
+  if (containerRef.value) {
+    containerRef.value.addEventListener('scroll', handleScroll)
+  }
+  // 监听快捷键
+  window.addEventListener('keydown', handleKeydown)
 })
 
+onUnmounted(() => {
+  // 清理事件监听
+  if (containerRef.value) {
+    containerRef.value.removeEventListener('scroll', handleScroll)
+  }
+  window.removeEventListener('keydown', handleKeydown)
+})
+
+// 处理快捷键
+function handleKeydown(event) {
+  // Ctrl+End 滚动到底部
+  if (event.ctrlKey && event.key === 'End') {
+    event.preventDefault()
+    scrollToBottom(true)
+  }
+}
+
+// 处理滚动事件
+function handleScroll() {
+  if (!containerRef.value) return
+  
+  const { scrollTop, scrollHeight, clientHeight } = containerRef.value
+  const distanceFromBottom = scrollHeight - scrollTop - clientHeight
+  
+  // 如果距离底部超过100px，认为用户在向上滚动，立即打断自动滚动
+  if (distanceFromBottom > 100) {
+    isUserScrolling.value = true
+    showScrollToBottom.value = true
+  } else {
+    // 如果已经在底部，隐藏按钮但不改变滚动状态
+    // 这样可以避免用户手动滚动到底部时立即恢复自动滚动
+    showScrollToBottom.value = false
+  }
+}
+
 // 滚动到底部
-function scrollToBottom() {
+function scrollToBottom(smooth = false) {
   nextTick(() => {
     if (containerRef.value) {
-      containerRef.value.scrollTop = containerRef.value.scrollHeight
+      if (smooth) {
+        containerRef.value.scrollTo({
+          top: containerRef.value.scrollHeight,
+          behavior: 'smooth'
+        })
+      } else {
+        containerRef.value.scrollTop = containerRef.value.scrollHeight
+      }
+      // 点击按钮或按快捷键后，立即恢复自动跟踪
+      isUserScrolling.value = false
+      showScrollToBottom.value = false
     }
   })
 }
@@ -460,6 +538,7 @@ async function handleCopy(content) {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  position: relative;
 }
 
 .messages-container {
@@ -546,16 +625,43 @@ async function handleCopy(content) {
   overflow-x: auto;
   font-family: 'Consolas', 'Monaco', monospace;
   font-size: 12px;
-  border: 1px solid #d0d7de;
+  border: none;
+}
+
+.message-content :deep(.code-block)::-webkit-scrollbar {
+  height: 6px;
+}
+
+.message-content :deep(.code-block)::-webkit-scrollbar-track {
+  background: #1a1a1a;
+}
+
+.message-content :deep(.code-block)::-webkit-scrollbar-thumb {
+  background: #444;
+  border-radius: 3px;
+}
+
+.message-content :deep(.code-block)::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+.message-content :deep(.code-block .hljs-comment) {
+  font-style: normal;
+}
+
+.message-content :deep(.code-block .hljs-emphasis),
+.message-content :deep(.code-block em),
+.message-content :deep(.code-block i) {
+  font-style: normal;
 }
 
 .message-content :deep(.inline-code) {
-  background: #333;
+  background: #2a2a2a;
   padding: 2px 6px;
   border-radius: 4px;
   font-family: 'Consolas', 'Monaco', monospace;
   font-size: 12px;
-  border: 1px solid #d0d7de;
+  border: none;
 }
 
 /* 思考过程部分样式 - 折叠状态 */
@@ -819,5 +925,48 @@ async function handleCopy(content) {
 .tool-execution-result::-webkit-scrollbar-thumb {
   background: #444;
   border-radius: 2px;
+}
+
+/* 滚动到底部按钮 */
+.scroll-to-bottom {
+  position: absolute;
+  bottom: 24px;
+  right: 24px;
+  width: 40px;
+  height: 40px;
+  background: #409eff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 12px rgba(64, 158, 255, 0.4);
+  transition: all 0.3s ease;
+  z-index: 10;
+}
+
+.scroll-to-bottom:hover {
+  background: #66b1ff;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(64, 158, 255, 0.6);
+}
+
+.scroll-to-bottom:active {
+  transform: translateY(0);
+}
+
+.scroll-to-bottom .el-icon {
+  font-size: 20px;
+  color: #fff;
+}
+
+/* 淡入淡出动画 */
+.fade-enter-active, .fade-leave-active {
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.fade-enter-from, .fade-leave-to {
+  opacity: 0;
+  transform: translateY(10px);
 }
 </style>

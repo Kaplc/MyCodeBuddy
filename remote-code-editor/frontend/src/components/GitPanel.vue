@@ -698,9 +698,10 @@ async function handlePull() {
   }
 }
 
-// 组件挂载时加载Git状态
+// 组件挂载时加载Git状态和检查配置
 onMounted(() => {
   loadGitStatus()
+  checkGitConfig()
 })
 </script>
 

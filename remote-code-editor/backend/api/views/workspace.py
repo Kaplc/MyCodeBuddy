@@ -252,19 +252,19 @@ def set_workspace(request):
     # 更新当前工作区
     config['workspace_path'] = workspace_path
     
-    # 获取工作区列表并规范化路径（统一使用正斜杠）
+    # 获取工作区列表并规范化路径（统一使用正斜杠 + 小写）
     workspaces = config.get('workspaces', [])
-    normalized_path = str(path_obj).replace('\\', '/')  # 规范化路径
-    
+    normalized_path = str(path_obj).replace('\\', '/').lower()  # 规范化路径
+
     # 去重：移除所有指向同一目录的路径（规范化后比较）
     unique_workspaces = []
     normalized_list = []
     for ws in workspaces:
-        norm_ws = ws.replace('\\', '/')
+        norm_ws = ws.replace('\\', '/').lower()
         if norm_ws not in normalized_list:
             normalized_list.append(norm_ws)
             unique_workspaces.append(ws)
-    
+
     # 如果当前工作区不在列表中，则添加
     if normalized_path not in normalized_list:
         unique_workspaces.append(workspace_path)
@@ -314,9 +314,9 @@ def list_workspaces(request):
                     # 验证工作区是否存在
                     ws_obj = Path(ws_path)
                     if ws_obj.exists() and ws_obj.is_dir():
-                        # 规范化路径（统一使用正斜杠）
-                        normalized_path = str(ws_obj).replace('\\', '/')
-                        
+                        # 规范化路径（统一使用正斜杠 + 小写）
+                        normalized_path = str(ws_obj).replace('\\', '/').lower()
+
                         # 去重：如果路径已存在则跳过
                         if normalized_path in seen_paths:
                             continue

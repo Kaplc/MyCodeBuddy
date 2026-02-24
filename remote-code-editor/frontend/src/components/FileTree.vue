@@ -84,41 +84,56 @@
       <template #default="{ node, data }">
         <div
           class="file-node"
+          draggable="true"
+          @dragstart="handleDragStart($event, data)"
           @contextmenu.prevent="handleContextMenu($event, node, data)"
-          @mouseenter="handleMouseEnter($event, data)"
-          @mouseleave="handleMouseLeave"
         >
           <el-icon class="file-icon" :class="{ 'is-folder': data.is_dir }">
             <Folder v-if="data.is_dir" />
             <Document v-else />
           </el-icon>
           <span class="file-name">{{ node.label }}</span>
-          <el-icon 
-            v-if="hoveredItem === data.path"
-            class="delete-icon" 
-            @click.stop="handleDeleteClick(data)"
-          >
-            <Delete />
-          </el-icon>
         </div>
       </template>
     </el-tree>
     
     <!-- 右键菜单 -->
-    <el-dropdown
-      ref="contextMenuRef"
-      trigger="contextmenu"
-      :teleported="false"
-      @command="handleCommand"
+    <div
+      v-show="contextMenuVisible"
+      class="context-menu"
+      :style="{ left: contextMenuPos.x === 0 ? '0px' : contextMenuPos.x + 'px', top: contextMenuPos.y === 0 ? '0px' : contextMenuPos.y + 'px' }"
+      @click.stop
     >
-      <span></span>
-      <template #dropdown>
-        <el-dropdown-menu>
-          <el-dropdown-item command="rename">重命名</el-dropdown-item>
-          <el-dropdown-item command="delete" divided>删除</el-dropdown-item>
-        </el-dropdown-menu>
-      </template>
-    </el-dropdown>
+      <div class="context-menu-item" @click="handleCommand('newFile')">
+        新建文件
+      </div>
+      <div class="context-menu-item" @click="handleCommand('newFolder')">
+        新建文件夹
+      </div>
+      <div class="context-menu-divider"></div>
+      <div v-if="currentData && !currentData.is_dir" class="context-menu-item" @click="handleCommand('edit')">
+        编辑
+      </div>
+      <div class="context-menu-item" @click="handleCommand('copy')">
+        复制
+      </div>
+      <div class="context-menu-item" @click="handleCommand('paste')">
+        粘贴
+      </div>
+      <div class="context-menu-item" @click="handleCommand('rename')">
+        重命名
+      </div>
+      <div class="context-menu-divider"></div>
+      <div class="context-menu-item context-menu-item-danger" @click="handleCommand('delete')">
+        删除
+      </div>
+    </div>
+    <!-- 点击其他区域关闭菜单 -->
+    <div
+      v-if="contextMenuVisible"
+      class="context-menu-overlay"
+      @click="contextMenuVisible = false"
+    ></div>
 
     <!-- 新建对话框 -->
     <el-dialog v-model="createDialogVisible" :title="createDialogTitle" width="400px">
@@ -168,7 +183,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Document, Folder, FolderAdd, Refresh, FolderOpened, ArrowUp, ArrowRight, ArrowDown, Edit, Delete } from '@element-plus/icons-vue'
 import axios from 'axios'
@@ -179,10 +194,9 @@ const emit = defineEmits(['file-select'])
 
 // 树引用
 const treeRef = ref(null)
-const contextMenuRef = ref(null)
 
-// 悬停删除相关
-const hoveredItem = ref(null)
+// 展开状态缓存 - 存储展开的文件夹路径
+const expandedPaths = ref(new Set())
 
 // 树数据
 const treeData = ref([])
@@ -195,6 +209,13 @@ const treeProps = {
 // 当前右键选中的节点
 const currentNode = ref(null)
 const currentData = ref(null)
+
+// 右键菜单控制
+const contextMenuVisible = ref(false)
+const contextMenuPos = ref({ x: 0, y: 0 })
+
+// 复制粘贴
+const clipboardData = ref(null) // 存储被复制的文件/文件夹路径
 
 // 当前左键选中的节点
 const selectedNode = ref(null)
@@ -228,13 +249,40 @@ async function loadTree() {
     treeData.value = []
     return
   }
-  
+
   try {
     const response = await axios.get('/api/files/tree/', { params: { path: '' } })
     // 空数组也是有效的工作区，正常显示即可
     treeData.value = Array.isArray(response.data) ? response.data : []
+
+    // 恢复展开状态
+    await nextTick()
+    restoreExpandedState()
   } catch (error) {
     ElMessage.error('加载文件树失败: ' + (error.response?.data?.detail || error.message))
+  }
+}
+
+// 恢复展开状态
+async function restoreExpandedState() {
+  if (!treeRef.value) return
+
+  // 遍历所有缓存的展开路径，逐个展开
+  for (const path of expandedPaths.value) {
+    const node = treeRef.value.getNode(path)
+    if (node && !node.expanded) {
+      // 如果节点未加载，先加载再展开
+      if (!node.loaded && !node.loading) {
+        await new Promise(resolve => {
+          node.loadData(() => {
+            node.expanded = true
+            resolve()
+          })
+        })
+      } else {
+        node.expanded = true
+      }
+    }
   }
 }
 
@@ -273,9 +321,17 @@ function handleNodeClick(data, node) {
       // 如果节点未加载，先加载子节点再展开
       node.loadData(() => {
         node.expanded = true
+        // 缓存展开状态
+        expandedPaths.value.add(data.path)
       })
     } else {
       node.expanded = !node.expanded
+      // 更新展开状态缓存
+      if (node.expanded) {
+        expandedPaths.value.add(data.path)
+      } else {
+        expandedPaths.value.delete(data.path)
+      }
     }
   } else {
     // 点击文件时发送文件选择事件
@@ -287,14 +343,65 @@ function handleNodeClick(data, node) {
 function handleContextMenu(event, node, data) {
   currentNode.value = node
   currentData.value = data
-  // 简化右键菜单，直接使用原生的contextmenu事件
+  contextMenuPos.value = { x: event.clientX, y: event.clientY }
+  contextMenuVisible.value = true
+}
+
+// 处理右键菜单显示/隐藏
+function handleContextMenuVisible(visible) {
+  if (!visible) {
+    // 菜单关闭时清除选中状态
+    contextMenuVisible.value = false
+  }
+}
+
+// 处理拖拽开始
+function handleDragStart(event, data) {
+  // 设置拖拽数据
+  event.dataTransfer.setData('text/plain', JSON.stringify({
+    name: data.name,
+    path: data.path,
+    is_dir: data.is_dir
+  }))
+  event.dataTransfer.effectAllowed = 'copy'
 }
 
 // 处理命令
 async function handleCommand(command) {
+  // 关闭菜单
+  contextMenuVisible.value = false
+
+  // 新建文件/文件夹不需要选中节点
+  if (command === 'newFile') {
+    handleCreateFile()
+    return
+  } else if (command === 'newFolder') {
+    handleCreateFolder()
+    return
+  }
+
+  // 其他命令需要选中节点
   if (!currentData.value) return
 
-  if (command === 'rename') {
+  if (command === 'edit') {
+    // 编辑文件：触发文件选择事件
+    emit('file-select', currentData.value)
+  } else if (command === 'copy') {
+    // 复制
+    clipboardData.value = {
+      path: currentData.value.path,
+      name: currentData.value.name,
+      is_dir: currentData.value.is_dir
+    }
+    ElMessage.success('已复制')
+  } else if (command === 'paste') {
+    // 粘贴
+    if (!clipboardData.value) {
+      ElMessage.warning('没有可粘贴的内容')
+      return
+    }
+    await handlePaste()
+  } else if (command === 'rename') {
     renameValue.value = currentData.value.name
     renameDialogVisible.value = true
   } else if (command === 'delete') {
@@ -308,6 +415,35 @@ async function handleCommand(command) {
     } catch {
       // 用户取消
     }
+  }
+}
+
+// 处理粘贴
+async function handlePaste() {
+  if (!clipboardData.value || !currentData.value) return
+
+  // 只能粘贴到文件夹
+  if (!currentData.value.is_dir) {
+    ElMessage.warning('只能在文件夹中粘贴')
+    return
+  }
+
+  const sourcePath = clipboardData.value.path
+  const sourceName = clipboardData.value.name
+  const targetDir = currentData.value.path
+  const targetPath = `${targetDir}/${sourceName}`
+
+  try {
+    // 调用复制API
+    await axios.post('/api/files/copy/', {
+      source_path: sourcePath,
+      target_path: targetPath,
+      is_dir: clipboardData.value.is_dir
+    })
+    ElMessage.success('复制成功')
+    loadTree()
+  } catch (error) {
+    ElMessage.error('复制失败: ' + (error.response?.data?.detail || error.message))
   }
 }
 
@@ -349,7 +485,7 @@ async function loadWorkspaceList() {
 function getUniqueWorkspaces() {
   const seen = new Set()
   return workspaceList.value.filter(ws => {
-    const normalizedPath = ws.path.replace(/\\/g, '/')
+    const normalizedPath = ws.path.replace(/\\/g, '/').toLowerCase()
     if (seen.has(normalizedPath)) {
       return false
     }
@@ -457,20 +593,36 @@ async function confirmCreate() {
     ElMessage.warning('名称不能为空')
     return
   }
-  
+
   try {
-    const path = createParentPath.value 
+    const path = createParentPath.value
       ? `${createParentPath.value}/${newItemName.value}`
       : newItemName.value
-    
+
     await axios.post('/api/files/create/', {
       path: path,
       is_dir: createIsDir.value
     })
-    
+
     createDialogVisible.value = false
     ElMessage.success(createIsDir.value ? '文件夹创建成功' : '文件创建成功')
-    loadTree()
+
+    // 如果创建的是文件夹，缓存父路径的展开状态
+    if (createIsDir.value && createParentPath.value) {
+      expandedPaths.value.add(createParentPath.value)
+    }
+
+    await loadTree()
+
+    // 如果创建的是文件，自动打开
+    if (!createIsDir.value) {
+      await nextTick()
+      emit('file-select', {
+        name: newItemName.value,
+        path: path,
+        is_dir: false
+      })
+    }
   } catch (error) {
     ElMessage.error('创建失败: ' + (error.response?.data?.detail || error.message))
   }
@@ -508,29 +660,6 @@ async function deleteItem(path) {
   }
 }
 
-// 悬停显示删除图标
-function handleMouseEnter(event, data) {
-  hoveredItem.value = data.path
-}
-
-function handleMouseLeave() {
-  hoveredItem.value = null
-}
-
-// 点击删除图标
-async function handleDeleteClick(data) {
-  try {
-    await ElMessageBox.confirm(
-      `确定要删除 "${data.name}" 吗？`,
-      '删除确认',
-      { type: 'warning' }
-    )
-    await deleteItem(data.path)
-  } catch {
-    // 用户取消
-  }
-}
-
 // 加载当前工作区
 async function loadCurrentWorkspace() {
   try {
@@ -554,6 +683,7 @@ async function loadCurrentWorkspace() {
 // 暴露方法和状态
 defineExpose({
   loadTree,
+  refreshFiles: loadTree,  // 别名，兼容性
   currentWorkspace  // 暴露当前工作区路径给父组件
 })
 
@@ -680,7 +810,7 @@ async function confirmWorkspace() {
   flex: 1;
 }
 
-.delete-icon {
+/* .delete-icon {
   margin-left: auto;
   font-size: 14px;
   color: #ff5252;
@@ -693,7 +823,7 @@ async function confirmWorkspace() {
   opacity: 1;
   color: #ff1744;
   transform: scale(1.2);
-}
+} */
 
 :deep(.el-tree) {
   background: transparent;
@@ -859,6 +989,57 @@ async function confirmWorkspace() {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+.context-menu-trigger {
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  position: fixed;
+}
+
+/* 自定义右键菜单 */
+.context-menu {
+  position: fixed;
+  background: #1e1e1e;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 4px 0;
+  min-width: 120px;
+  z-index: 9999;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.context-menu-item {
+  padding: 8px 16px;
+  cursor: pointer;
+  color: #ccc;
+  font-size: 13px;
+}
+
+.context-menu-item:hover {
+  background: rgba(64, 158, 255, 0.2);
+  color: #409eff;
+}
+
+.context-menu-item-danger:hover {
+  background: rgba(255, 82, 82, 0.2);
+  color: #ff5252;
+}
+
+.context-menu-divider {
+  height: 1px;
+  background: #333;
+  margin: 4px 0;
+}
+
+.context-menu-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9998;
 }
 </style>
 

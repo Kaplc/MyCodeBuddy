@@ -16,6 +16,7 @@ urlpatterns = [
     path('files/rename/', views.rename_file_or_dir, name='file_rename'),
     path('files/delete/', views.delete_file_or_dir, name='file_delete'),
     path('files/exists/', views.check_exists, name='file_exists'),
+    path('files/copy/', views.copy_file_or_dir, name='file_copy'),
     
     # 工作区API
     path('workspace/get/', views.get_workspace, name='workspace_get'),

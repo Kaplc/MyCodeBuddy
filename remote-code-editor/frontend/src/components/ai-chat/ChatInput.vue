@@ -1,11 +1,23 @@
 <template>
-  <div class="input-container">
+  <div
+    class="input-container"
+    :class="{ 'drag-over': isDragOver }"
+    @dragover.prevent="handleDragOver"
+    @dragleave.prevent="handleDragLeave"
+    @drop.prevent="handleDrop"
+  >
+    <!-- 拖拽提示覆盖层 -->
+    <div v-if="isDragOver" class="drag-overlay">
+      <el-icon class="drag-icon"><Upload /></el-icon>
+      <span>拖放文件到这里引用</span>
+    </div>
+
     <!-- 生成中状态指示器 -->
     <div v-if="isStreaming" class="streaming-indicator">
       <span class="streaming-dot"></span>
       <span>生成中...</span>
     </div>
-    
+
     <!-- 文件引用显示 -->
     <div v-if="attachedFiles.length > 0" class="attached-files">
       <div v-for="(file, index) in attachedFiles" :key="index" class="file-tag">
@@ -92,8 +104,9 @@
 
 <script setup>
 import { ref, watch } from 'vue'
-import { ChatDotRound, Setting, Loading, VideoPause, Promotion, Warning, Paperclip, Document, Close } from '@element-plus/icons-vue'
+import { ChatDotRound, Setting, Loading, VideoPause, Promotion, Warning, Paperclip, Document, Close, Upload } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import axios from 'axios'
 const GlmIcon = 'https://www.zhipuai.cn/favicon.png'
 
 // Props
@@ -132,6 +145,7 @@ const localInputMessage = ref(props.modelValue)
 const localSelectedModel = ref(props.selectedModel)
 const localAiMode = ref(props.aiMode)
 const attachedFiles = ref([])
+const isDragOver = ref(false)
 
 // 监听 props 变化
 watch(() => props.modelValue, (val) => {
@@ -194,6 +208,135 @@ function handleAttachFile() {
 
 function removeFile(index) {
   attachedFiles.value.splice(index, 1)
+}
+
+// 拖拽处理
+function handleDragOver(event) {
+  // 检查是否拖拽的是文件
+  if (event.dataTransfer.types.includes('Files') || event.dataTransfer.types.includes('text/plain')) {
+    isDragOver.value = true
+  }
+}
+
+function handleDragLeave(event) {
+  // 检查是否真的离开了容器（而不是进入子元素）
+  const container = event.currentTarget
+  const relatedTarget = event.relatedTarget
+  if (relatedTarget && container.contains(relatedTarget)) {
+    return
+  }
+  isDragOver.value = false
+}
+
+async function handleDrop(event) {
+  isDragOver.value = false
+
+  if (!props.currentWorkspace) {
+    ElMessage.warning('请先选择工作区')
+    return
+  }
+
+  // 处理从文件树拖拽过来的文件（自定义数据）
+  const customData = event.dataTransfer.getData('text/plain')
+  if (customData) {
+    try {
+      const fileData = JSON.parse(customData)
+      if (fileData.path) {
+        // 避免重复添加
+        if (!attachedFiles.value.find(f => f.path === fileData.path)) {
+          if (fileData.is_dir) {
+            // 文件夹：获取目录下所有文件内容
+            const files = await readDirectoryFiles(fileData.path)
+            attachedFiles.value.push({
+              ...fileData,
+              files: files
+            })
+          } else {
+            // 文件：读取文件内容
+            const content = await readFileContent(fileData.path)
+            attachedFiles.value.push({
+              ...fileData,
+              content
+            })
+          }
+        }
+      }
+    } catch (e) {
+      console.error('解析拖拽数据失败:', e)
+    }
+    return
+  }
+
+  // 处理从系统文件管理器拖拽过来的文件
+  const files = event.dataTransfer.files
+  if (files.length > 0) {
+    for (const file of files) {
+      try {
+        const content = await readFileFromSystem(file)
+        attachedFiles.value.push({
+          name: file.name,
+          path: file.name, // 系统文件使用文件名作为路径
+          is_dir: false,
+          content
+        })
+      } catch (e) {
+        ElMessage.error(`读取文件 ${file.name} 失败`)
+      }
+    }
+  }
+}
+
+// 从工作区读取文件内容
+async function readFileContent(path) {
+  try {
+    const response = await axios.get('/api/files/read/', {
+      params: { path }
+    })
+    return response.data.content || ''
+  } catch (error) {
+    console.error('读取文件失败:', error)
+    return ''
+  }
+}
+
+// 读取文件夹下所有文件
+async function readDirectoryFiles(dirPath) {
+  try {
+    const response = await axios.get('/api/files/tree/', {
+      params: { path: dirPath, recursive: true }
+    })
+    const files = []
+    const queue = [...(response.data || [])]
+
+    while (queue.length > 0) {
+      const item = queue.shift()
+      if (!item.is_dir) {
+        const content = await readFileContent(item.path)
+        files.push({
+          name: item.name,
+          path: item.path,
+          content
+        })
+      }
+      if (item.children) {
+        queue.push(...item.children)
+      }
+    }
+    return files
+  } catch (error) {
+    console.error('读取文件夹失败:', error)
+    return []
+  }
+}
+
+// 从系统文件读取内容
+function readFileFromSystem(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = (e) => resolve(e.target.result)
+    reader.onerror = reject
+    reader.readAsText(file)
+  })
 }
 
 // 暴露方法供父组件调用
@@ -267,6 +410,36 @@ defineExpose({
   gap: 12px;
   flex-shrink: 0;
   background: #1e1e1e;
+  position: relative;
+  transition: background-color 0.2s;
+}
+
+.input-container.drag-over {
+  background: rgba(64, 158, 255, 0.1);
+}
+
+.drag-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(64, 158, 255, 0.15);
+  border: 2px dashed #409eff;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  z-index: 10;
+  color: #409eff;
+  font-size: 14px;
+  pointer-events: none;
+}
+
+.drag-icon {
+  font-size: 32px;
 }
 
 .attached-files {

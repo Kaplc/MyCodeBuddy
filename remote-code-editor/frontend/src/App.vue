@@ -20,11 +20,6 @@
             <el-icon><Search /></el-icon>
           </div>
         </el-tooltip>
-        <el-tooltip :content="showAiPanel ? '收起AI助手' : '展开AI助手'" placement="right">
-          <div class="nav-item" :class="{ active: showAiPanel }" @click="showAiPanel = !showAiPanel">
-            <el-icon><ChatDotRound /></el-icon>
-          </div>
-        </el-tooltip>
       </aside>
 
       <!-- 左侧：文件树 -->
@@ -67,7 +62,7 @@
       
       <!-- 拖拽条2：编辑器和AI助手之间 -->
       <div
-        v-show="showAiPanel"
+        v-show="showAiPanel && aiSidebarWidth > 24"
         class="resize-handle"
         @mousedown="startResize($event, 'right')"
       ></div>
@@ -80,6 +75,8 @@
           :font-size="aiFontSize"
           :current-workspace="currentWorkspace"
           @insert-code="handleInsertCode"
+          @collapse-change="handleAiCollapse"
+          @file-written="handleFileWritten"
         />
       </aside>
     </main>
@@ -176,7 +173,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Search, Switch, ChatDotRound, FolderOpened } from '@element-plus/icons-vue'
+import { Search, FolderOpened } from '@element-plus/icons-vue'
 import SearchPanel from './components/SearchPanel.vue'
 import 'highlight.js/styles/atom-one-dark.css'
 import FileTree from './components/FileTree.vue'
@@ -213,7 +210,8 @@ const currentWorkspace = computed(() => {
 const mainRef = ref(null)
 const sidebarWidth = ref(400)
 const searchSidebarWidth = ref(400)
-const aiSidebarWidth = ref(350)
+const aiSidebarWidth = ref(400)
+const lastAiSidebarWidth = ref(400)
 const editorFlex = ref(1)
 
 // 面板展开/折叠（从 localStorage 读取状态）
@@ -322,6 +320,38 @@ function handleInsertCode(code) {
   if (codeEditorRef.value) {
     codeEditorRef.value.insertCode(code)
     ElMessage.success('代码已插入到编辑器')
+  }
+}
+
+// 处理AI面板折叠变化
+function handleAiCollapse(collapsed) {
+  if (collapsed) {
+    lastAiSidebarWidth.value = aiSidebarWidth.value
+    aiSidebarWidth.value = 24
+  } else {
+    aiSidebarWidth.value = Math.max(400, lastAiSidebarWidth.value || 400)
+  }
+}
+
+// 处理Agent写入文件完成事件
+function handleFileWritten({ file_path }) {
+  console.log('[App] 收到文件写入完成事件:', file_path)
+  console.log('[App] 当前打开的文件:', currentFile.value?.path)
+  console.log('[App] 路径是否匹配:', currentFile.value?.path === file_path)
+  
+  // 刷新文件树
+  if (fileTreeRef.value) {
+    console.log('[App] 刷新文件树')
+    fileTreeRef.value.refreshFiles()
+  }
+  
+  // 如果当前打开的文件是被写入的文件，刷新编辑器内容
+  if (currentFile.value && currentFile.value.path === file_path) {
+    console.log('[App] 调用编辑器reloadFile方法')
+    // 强制重新加载文件内容
+    codeEditorRef.value?.reloadFile()
+  } else {
+    console.log('[App] 当前文件与写入文件不匹配，不刷新编辑器')
   }
 }
 
@@ -482,7 +512,7 @@ function handleResize(event) {
     searchSidebarWidth.value = newWidth
   } else if (resizeType === 'right') {
     // 调整右侧AI助手宽度
-    const newWidth = Math.max(250, Math.min(600, startAiSidebarWidth - deltaX))
+    const newWidth = Math.max(400, Math.min(600, startAiSidebarWidth - deltaX))
     aiSidebarWidth.value = newWidth
   }
 }
@@ -739,7 +769,8 @@ body {
 
 .ai-sidebar {
   flex-shrink: 0;
-  overflow: hidden;
+  overflow: visible;
+  position: relative;
 }
 
 /* 拖拽条样式 */

@@ -1,13 +1,20 @@
 <template>
-  <div class="ai-chat">
-    <!-- 头部组件 -->
-    <ChatHeader
-      :connection-status="connectionStatus"
-      :context-count="contextCount"
-      :message-count="messages.length"
-      @show-history="handleShowHistory"
-      @new-chat="createNewChat"
-    />
+  <div class="ai-chat" :class="{ 'is-collapsed': isCollapsed }">
+    <!-- 折叠按钮 -->
+    <div class="collapse-btn" @click="toggleCollapse" :title="isCollapsed ? '展开AI助手' : '折叠AI助手'">
+      <el-icon><ArrowRight v-if="isCollapsed" /><ArrowLeft v-else /></el-icon>
+    </div>
+    
+    <!-- 内容区域 -->
+    <div class="ai-chat-content" v-show="!isCollapsed">
+      <!-- 头部组件 -->
+      <ChatHeader
+        :connection-status="connectionStatus"
+        :context-count="contextCount"
+        :message-count="messages.length"
+        @show-history="handleShowHistory"
+        @new-chat="createNewChat"
+      />
     
       <!-- 消息列表组件 -->
       <div class="chat-body" :style="{ '--chat-font-size': fontSize + 'px' }">
@@ -23,22 +30,25 @@
           @insert-code="handleInsertCode"
         />
       
-      <!-- 输入组件 -->
-      <ChatInput
-        ref="chatInputRef"
-        v-model="inputMessage"
-        :is-streaming="isStreaming"
-        :selected-model="selectedModel"
-        :ai-mode="aiMode"
-        :ai-status="connectionStatus"
-        :current-workspace="currentWorkspace"
-        @send="handleSendMessage"
-        @stop="handleStop"
-        @update:selected-model="selectedModel = $event"
-        @update:ai-mode="aiMode = $event"
-        @attach-files="showFileSelector"
-      />
+        <!-- 输入组件 -->
+        <ChatInput
+          ref="chatInputRef"
+          v-model="inputMessage"
+          :is-streaming="isStreaming"
+          :selected-model="selectedModel"
+          :ai-mode="aiMode"
+          :ai-status="connectionStatus"
+          :current-workspace="currentWorkspace"
+          @send="handleSendMessage"
+          @stop="handleStop"
+          @update:selected-model="selectedModel = $event"
+          @update:ai-mode="aiMode = $event"
+          @attach-files="showFileSelector"
+        />
+      </div>
     </div>
+  </div>
+    
     <!-- 历史对话对话框 -->
     <el-dialog v-model="showHistoryDialog" title="对话历史" width="500px" class="history-dialog">
       <div class="history-list">
@@ -112,13 +122,12 @@
         </el-button>
       </template>
     </el-dialog>
-  </div>
 </template>
 
 <script setup>
 import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Delete, Search, Document, Check } from '@element-plus/icons-vue'
+import { Delete, Search, Document, Check, ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
 import ChatHeader from './ai-chat/ChatHeader.vue'
 import MessageList from './ai-chat/MessageList.vue'
 import ChatInput from './ai-chat/ChatInput.vue'
@@ -126,7 +135,7 @@ import { API_CONFIG } from '../config/api.js'
 import axios from 'axios'
 
 // 定义事件
-const emit = defineEmits(['insert-code'])
+const emit = defineEmits(['insert-code', 'collapse-change', 'file-written'])
 
 // Props
 const props = defineProps({
@@ -151,6 +160,17 @@ const isStreaming = ref(false)
 const streamingReasoning = ref('')  // 思考内容
 const streamingContent = ref('')    // 回答内容
 const connectionStatus = ref('disconnected')
+
+// 折叠状态
+const isCollapsed = ref(false)
+const COLLAPSED_WIDTH = 40
+const EXPANDED_MIN_WIDTH = 400
+
+// 切换折叠状态
+function toggleCollapse() {
+  isCollapsed.value = !isCollapsed.value
+  emit('collapse-change', isCollapsed.value)
+}
 
 // Agent 模式状态
 const agentStatus = ref(null)  // null | 'thinking' | 'executing'
@@ -401,12 +421,7 @@ onUnmounted(() => {
   }
 })
 
-// 监听选中的代码
-watch(() => props.selectedCode, (code) => {
-  if (code) {
-    inputMessage.value = `请帮我分析或优化这段代码：\n\`\`\`\n${code}\n\`\`\``
-  }
-})
+// 选中代码不再自动填入聊天输入框，用户可手动复制粘贴
 
 // 监听工作区变化，刷新对话列表
 watch(() => props.currentWorkspace, async () => {
@@ -483,6 +498,16 @@ function handleWebSocketMessage(data) {
     if (lastTool) {
       lastTool.status = data.result.success ? 'success' : 'error'
       lastTool.result = data.result
+      
+      // 如果是write_file工具执行成功，发出文件写入完成事件
+      if (lastTool.name === 'write_file' && data.result.success) {
+        const filePath = data.result.path || data.result.output
+        console.log('[AIChat] write_file工具执行成功，触发file-written事件:', filePath)
+        console.log('[AIChat] 完整的tool result:', data.result)
+        emit('file-written', {
+          file_path: filePath
+        })
+      }
     }
     agentStatus.value = 'thinking'
   } else if (data.type === 'warning') {
@@ -703,10 +728,54 @@ defineExpose({
 .ai-chat {
   height: 100%;
   display: flex;
-  flex-direction: column;
   background: #1e1e1e;
-  border-left: 1px solid #333;
+  overflow: visible;
+  min-width: 400px;
+  position: relative;
+}
+
+.ai-chat.is-collapsed {
+  min-width: 24px;
+}
+
+.collapse-btn{
+  width: 24px;
+  height: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #2d2d2d;
+  cursor: pointer;
+  transition: background 0.2s;
+  position: absolute;
+  left: -24px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  border-radius: 16px 0 0 16px;
+}
+
+.collapse-btn:hover{
+  background: #409eff;
+}
+
+.collapse-btn .el-icon{
+  font-size: 14px;
+  color: #ccc;
+  transform: translateX(5px);
+}
+
+.collapse-btn:hover .el-icon{
+  color: #fff;
+}
+
+.ai-chat-content{
+  flex: 1;
+  min-width: 400px;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
+  border-left: 1px solid #333;
 }
 
 .chat-body {

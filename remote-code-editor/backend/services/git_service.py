@@ -29,6 +29,23 @@ class GitService:
         if self.workspace:
             self._init_repo()
     
+    def _get_workspaces_dir(self) -> Path:
+        """
+        获取 workspaces 目录
+        如果当前 workspace 是 workspaces 的子目录，返回 workspaces 根目录
+        否则返回当前 workspace
+        """
+        if not self.workspace:
+            return Path.home() / 'code-editor-workspace'
+        
+        # 检查父目录是否叫 workspaces
+        parent = self.workspace.parent
+        if parent.name == 'workspaces':
+            return parent
+        
+        # 否则返回当前 workspace
+        return self.workspace
+    
     def _init_repo(self):
         """初始化或打开Git仓库"""
         if not self.workspace:
@@ -54,7 +71,12 @@ class GitService:
         """
         try:
             # 检查git命令是否可用
-            result = subprocess.run(['git', '--version'], capture_output=True, text=True)
+            result = subprocess.run(
+                ['git', '--version'],
+                capture_output=True,
+                text=True,
+                shell=True
+            )
             if result.returncode != 0:
                 return {
                     'configured': False,
@@ -65,14 +87,16 @@ class GitService:
             name_result = subprocess.run(
                 ['git', 'config', '--global', 'user.name'],
                 capture_output=True,
-                text=True
+                text=True,
+                shell=True
             )
             
             # 检查邮箱配置
             email_result = subprocess.run(
                 ['git', 'config', '--global', 'user.email'],
                 capture_output=True,
-                text=True
+                text=True,
+                shell=True
             )
             
             user_name = name_result.stdout.strip() if name_result.returncode == 0 else ''
@@ -100,6 +124,7 @@ class GitService:
     async def clone(self, repo_url: str) -> Dict:
         """
         克隆远程仓库（使用系统配置的Git凭据）
+        克隆到 workspaces 目录下，每个仓库作为独立文件夹
         
         Args:
             repo_url: 仓库URL
@@ -119,7 +144,11 @@ class GitService:
             
             # 获取仓库名称
             repo_name = repo_url.split('/')[-1].replace('.git', '')
-            clone_path = self.workspace / repo_name
+            
+            # 确定克隆目标目录：优先使用 workspaces 目录
+            # 如果当前 workspace 是 workspaces 的子目录，则克隆到 workspaces 根目录
+            workspaces_dir = self._get_workspaces_dir()
+            clone_path = workspaces_dir / repo_name
             
             # 如果目录已存在，报错
             if clone_path.exists():
@@ -141,7 +170,7 @@ class GitService:
             return {
                 'success': True,
                 'message': f'成功克隆仓库: {repo_name}',
-                'path': str(clone_path.relative_to(self.workspace))
+                'path': str(clone_path)
             }
             
         except GitCommandError as e:

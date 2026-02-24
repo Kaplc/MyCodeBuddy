@@ -109,7 +109,12 @@ if _config_file.exists():
 
 # 如果配置文件没有设置，使用环境变量（仅用于开发环境）
 if not WORKSPACE_PATH and os.getenv('WORKSPACE_PATH'):
-    WORKSPACE_PATH = os.getenv('WORKSPACE_PATH')
+    _env_path = os.getenv('WORKSPACE_PATH')
+    # 支持相对路径：如果不是绝对路径，则相对于项目根目录
+    if not os.path.isabs(_env_path):
+        WORKSPACE_PATH = str(BASE_DIR / _env_path)
+    else:
+        WORKSPACE_PATH = _env_path
 
 # 智谱AI API密钥
 ZHIPU_API_KEY = os.getenv('ZHIPU_API_KEY', '')
@@ -145,6 +150,15 @@ LOGGING = {
             'formatter': 'detailed',
             'encoding': 'utf-8',
         },
+        'frontend_file': {
+            'class': 'logging.handlers.TimedRotatingFileHandler',
+            'filename': os.path.join(BASE_DIR, 'logs', 'frontend.log'),
+            'when': 'M',             # 按分钟轮转
+            'interval': 20,          # 每20分钟创建一个新文件
+            'backupCount': 504,      # 保留7天日志
+            'formatter': 'detailed',
+            'encoding': 'utf-8',
+        },
     },
     'root': {
         'handlers': ['console', 'file'],
@@ -158,6 +172,11 @@ LOGGING = {
         },
         'api': {
             'handlers': ['console', 'file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'frontend': {
+            'handlers': ['console', 'frontend_file'],
             'level': 'INFO',
             'propagate': False,
         },

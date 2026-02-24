@@ -3,12 +3,30 @@
 提供文件系统操作的核心逻辑
 """
 import os
+import base64
 import aiofiles
 import asyncio
 from pathlib import Path
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict, Union
 from pathvalidate import sanitize_filename
+
+
+# 二进制文件扩展名
+BINARY_EXTENSIONS = {
+    '.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tga', '.webp', '.ico', '.svg',
+    '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+    '.zip', '.rar', '.7z', '.tar', '.gz',
+    '.exe', '.dll', '.so', '.dylib',
+    '.mp3', '.mp4', '.wav', '.avi', '.mov', '.mkv',
+    '.ttf', '.otf', '.woff', '.woff2', '.eot',
+    '.pyc', '.pyd', '.class', '.jar', '.war',
+}
+
+
+def is_binary_file(path: Path) -> bool:
+    """检查文件是否为二进制文件"""
+    return path.suffix.lower() in BINARY_EXTENSIONS
 
 
 class FileService:
@@ -125,7 +143,7 @@ class FileService:
         
         return items
     
-    async def read_file(self, relative_path: str) -> str:
+    async def read_file(self, relative_path: str) -> Dict[str, Union[str, bool]]:
         """
         读取文件内容
         
@@ -133,7 +151,7 @@ class FileService:
             relative_path: 相对路径
         
         Returns:
-            文件内容
+            包含内容、是否为二进制、文件类型等信息的字典
         """
         if not self.workspace:
             raise FileNotFoundError("工作区未设置")
@@ -146,13 +164,66 @@ class FileService:
         if path.is_dir():
             raise IsADirectoryError(f"路径是目录: {relative_path}")
         
+        # 检查是否为二进制文件
+        is_binary = is_binary_file(path)
+        
         # 使用文件锁
         lock = self._get_file_lock(path)
         async with lock:
-            async with aiofiles.open(path, mode='r', encoding='utf-8') as f:
-                content = await f.read()
-        
-        return content
+            if is_binary:
+                # 二进制文件：读取并转为 base64
+                async with aiofiles.open(path, mode='rb') as f:
+                    content = await f.read()
+                return {
+                    'content': base64.b64encode(content).decode('utf-8'),
+                    'is_binary': True,
+                    'mime_type': self._get_mime_type(path),
+                    'size': len(content)
+                }
+            else:
+                # 文本文件：尝试多种编码
+                encodings = ['utf-8', 'gbk', 'gb2312', 'latin-1']
+                last_error = None
+                
+                for encoding in encodings:
+                    try:
+                        async with aiofiles.open(path, mode='r', encoding=encoding) as f:
+                            content = await f.read()
+                        return {
+                            'content': content,
+                            'is_binary': False,
+                            'encoding': encoding
+                        }
+                    except UnicodeDecodeError as e:
+                        last_error = e
+                        continue
+                
+                # 如果所有编码都失败，作为二进制处理
+                async with aiofiles.open(path, mode='rb') as f:
+                    content = await f.read()
+                return {
+                    'content': base64.b64encode(content).decode('utf-8'),
+                    'is_binary': True,
+                    'mime_type': 'application/octet-stream',
+                    'size': len(content)
+                }
+    
+    def _get_mime_type(self, path: Path) -> str:
+        """获取文件的 MIME 类型"""
+        ext = path.suffix.lower()
+        mime_types = {
+            '.png': 'image/png',
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.gif': 'image/gif',
+            '.bmp': 'image/bmp',
+            '.tga': 'image/x-tga',
+            '.webp': 'image/webp',
+            '.ico': 'image/x-icon',
+            '.svg': 'image/svg+xml',
+            '.pdf': 'application/pdf',
+        }
+        return mime_types.get(ext, 'application/octet-stream')
     
     async def save_file(self, relative_path: str, content: str) -> None:
         """
@@ -267,15 +338,49 @@ class FileService:
     async def exists(self, relative_path: str) -> bool:
         """
         检查文件或目录是否存在
-        
+
         Args:
             relative_path: 相对路径
-        
+
         Returns:
             是否存在
         """
         if not self.workspace:
             return False
-        
+
         path = self._resolve_path(relative_path)
         return path.exists()
+
+    async def copy(self, source_relative_path: str, target_relative_path: str, is_dir: bool = False) -> str:
+        """
+        复制文件或目录
+
+        Args:
+            source_relative_path: 源相对路径
+            target_relative_path: 目标相对路径
+            is_dir: 是否复制目录
+
+        Returns:
+            目标相对路径
+        """
+        if not self.workspace:
+            raise PermissionError("工作区未设置")
+
+        import shutil
+
+        source_path = self._resolve_path(source_relative_path)
+        target_path = self._resolve_path(target_relative_path)
+
+        if not source_path.exists():
+            raise FileNotFoundError(f"源文件或目录不存在: {source_relative_path}")
+
+        if target_path.exists():
+            raise FileExistsError(f"目标文件或目录已存在: {target_relative_path}")
+
+        if is_dir:
+            shutil.copytree(source_path, target_path)
+        else:
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source_path, target_path)
+
+        return str(target_path.relative_to(self.workspace))
