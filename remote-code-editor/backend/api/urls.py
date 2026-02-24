@@ -54,4 +54,7 @@ urlpatterns = [
     path('conversations/delete/', views.delete_conversation, name='conversations_delete'),
     path('conversations/message/', views.add_message, name='conversations_message'),
     path('conversations/clear/', views.clear_conversation, name='conversations_clear'),
+
+    # 前端日志API
+    path('frontend-log/', views.frontend_log, name='frontend_log'),
 ]

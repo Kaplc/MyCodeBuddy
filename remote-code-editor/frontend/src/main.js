@@ -43,7 +43,47 @@ axios.interceptors.response.use(
   }
 )
 
+// 前端日志发送到后端
+async function sendLogToBackend(level, message, extra = {}) {
+  try {
+    await axios.post('/api/frontend-log/', {
+      level,
+      message,
+      timestamp: new Date().toISOString(),
+      url: window.location.href,
+      ...extra
+    })
+  } catch (e) {
+    // 静默失败，避免循环错误
+  }
+}
+
+// 全局错误处理器
+window.onerror = function(message, source, lineno, colno, error) {
+  console.error('[全局错误]', { message, source, lineno, colno, error })
+  sendLogToBackend('error', message, { source, lineno, colno, stack: error?.stack })
+  return false
+}
+
+// Promise 未捕获错误
+window.addEventListener('unhandledrejection', function(event) {
+  console.error('[Promise错误]', event.reason)
+  sendLogToBackend('error', String(event.reason), { type: 'unhandledrejection' })
+})
+
 const app = createApp(App)
+
+// Vue 组件错误处理
+app.config.errorHandler = (err, instance, info) => {
+  console.error('[Vue错误]', err, info)
+  sendLogToBackend('error', String(err), { info, stack: err?.stack })
+}
+
+// Vue 警告处理（开发环境）
+app.config.warnHandler = (msg, instance, trace) => {
+  console.warn('[Vue警告]', msg, trace)
+  sendLogToBackend('warn', msg, { trace })
+}
 
 // 注册Element Plus
 app.use(ElementPlus)

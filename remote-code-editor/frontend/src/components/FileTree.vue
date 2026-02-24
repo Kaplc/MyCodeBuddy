@@ -1,34 +1,5 @@
 <template>
   <div class="file-tree">
-    <!-- 拖拽垃圾桶区域 -->
-    <div
-      v-if="isDragging && draggedData"
-      class="trash-drop-zone"
-      :class="{ 'is-drag-over': isDragOver }"
-      @dragover.prevent="handleDragOver"
-      @dragleave="handleDragLeave"
-      @drop.prevent="handleDrop"
-      @touchmove.prevent="handleTouchMove"
-      @touchend.prevent="handleTouchEndDrop"
-    >
-      <div class="trash-container">
-        <el-icon class="trash-icon"><Delete /></el-icon>
-        <div class="trash-info">
-          <span class="trash-text">拖放到此处删除</span>
-          <span class="dragging-file-name">{{ draggedData.name }}</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- 移动端拖拽提示 -->
-    <div
-      v-if="isDragging && isTouchDevice()"
-      class="touch-drag-hint"
-    >
-      <el-icon><Pointer /></el-icon>
-      <span>拖动到下方垃圾桶</span>
-    </div>
-
     <div class="file-tree-header">
       <el-dropdown 
         trigger="click" 
@@ -113,22 +84,22 @@
       <template #default="{ node, data }">
         <div
           class="file-node"
-          :class="{ 'is-dragging': isDragging && draggedData?.path === data.path }"
-          draggable="true"
           @contextmenu.prevent="handleContextMenu($event, node, data)"
-          @mousedown="handleMouseDown($event, node, data)"
-          @mouseup="handleMouseUp"
-          @mouseleave="handleMouseUp"
-          @touchstart="handleTouchStart($event, node, data)"
-          @touchend="handleTouchEnd"
-          @dragstart="handleDragStart($event, data)"
-          @dragend="handleDragEnd"
+          @mouseenter="handleMouseEnter($event, data)"
+          @mouseleave="handleMouseLeave"
         >
           <el-icon class="file-icon" :class="{ 'is-folder': data.is_dir }">
             <Folder v-if="data.is_dir" />
             <Document v-else />
           </el-icon>
           <span class="file-name">{{ node.label }}</span>
+          <el-icon 
+            v-if="hoveredItem === data.path"
+            class="delete-icon" 
+            @click.stop="handleDeleteClick(data)"
+          >
+            <Delete />
+          </el-icon>
         </div>
       </template>
     </el-tree>
@@ -149,45 +120,6 @@
       </template>
     </el-dropdown>
 
-    <!-- 长按菜单 -->
-    <el-dropdown
-      ref="longPressMenuRef"
-      trigger="click"
-      :teleported="false"
-      v-model:visible="longPressMenuVisible"
-      @command="handleLongPressCommand"
-    >
-      <div
-        ref="longPressMenuTrigger"
-        :style="{
-          position: 'fixed',
-          left: longPressMenuPosition.x + 'px',
-          top: longPressMenuPosition.y + 'px',
-          zIndex: 9999
-        }"
-      ></div>
-      <template #dropdown>
-        <el-dropdown-menu>
-          <el-dropdown-item command="createFile">
-            <el-icon><Document /></el-icon>
-            <span style="margin-left: 8px">创建文件</span>
-          </el-dropdown-item>
-          <el-dropdown-item command="createFolder">
-            <el-icon><FolderAdd /></el-icon>
-            <span style="margin-left: 8px">创建文件夹</span>
-          </el-dropdown-item>
-          <el-dropdown-item command="rename" divided>
-            <el-icon><Edit /></el-icon>
-            <span style="margin-left: 8px">重命名</span>
-          </el-dropdown-item>
-          <el-dropdown-item command="delete">
-            <el-icon><Delete /></el-icon>
-            <span style="margin-left: 8px">删除</span>
-          </el-dropdown-item>
-        </el-dropdown-menu>
-      </template>
-    </el-dropdown>
-    
     <!-- 新建对话框 -->
     <el-dialog v-model="createDialogVisible" :title="createDialogTitle" width="400px">
       <el-input v-model="newItemName" placeholder="请输入名称" @keyup.enter="confirmCreate" />
@@ -236,9 +168,9 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Document, Folder, FolderAdd, Refresh, FolderOpened, ArrowUp, ArrowRight, ArrowDown, Edit, Delete, Pointer } from '@element-plus/icons-vue'
+import { Document, Folder, FolderAdd, Refresh, FolderOpened, ArrowUp, ArrowRight, ArrowDown, Edit, Delete } from '@element-plus/icons-vue'
 import axios from 'axios'
 import { API_CONFIG } from '../config/api.js'
 
@@ -248,29 +180,16 @@ const emit = defineEmits(['file-select'])
 // 树引用
 const treeRef = ref(null)
 const contextMenuRef = ref(null)
-const longPressMenuRef = ref(null)
-const longPressMenuTrigger = ref(null)
 
-// 长按相关
-const longPressMenuVisible = ref(false)
-const longPressMenuPosition = ref({ x: 0, y: 0 })
-const longPressTimer = ref(null)
-const longPressNode = ref(null)
-const longPressData = ref(null)
-const LONG_PRESS_DURATION = 600 // 长按持续时间（毫秒）
-
-// 拖拽删除相关
-const isDragging = ref(false)
-const isDragOver = ref(false)
-const draggedData = ref(null)
-const dragStartPosition = ref({ x: 0, y: 0 })
+// 悬停删除相关
+const hoveredItem = ref(null)
 
 // 树数据
 const treeData = ref([])
 const treeProps = {
   label: 'name',
   children: 'children',
-  isLeaf: (data) => !data.is_dir
+  isLeaf: (data) => !data.is_dir || data.is_empty === true
 }
 
 // 当前右键选中的节点
@@ -390,59 +309,6 @@ async function handleCommand(command) {
       // 用户取消
     }
   }
-}
-
-// 处理长按菜单命令
-async function handleLongPressCommand(command) {
-  if (!longPressData.value) return
-
-  const data = longPressData.value
-
-  if (command === 'createFile') {
-    createDialogTitle.value = '新建文件'
-    createIsDir.value = false
-    if (data.is_dir) {
-      createParentPath.value = data.path
-    } else {
-      const pathParts = data.path.replace(/\\/g, '/').split('/')
-      pathParts.pop()
-      createParentPath.value = pathParts.join('/')
-    }
-    newItemName.value = ''
-    createDialogVisible.value = true
-  } else if (command === 'createFolder') {
-    createDialogTitle.value = '新建文件夹'
-    createIsDir.value = true
-    if (data.is_dir) {
-      createParentPath.value = data.path
-    } else {
-      const pathParts = data.path.replace(/\\/g, '/').split('/')
-      pathParts.pop()
-      createParentPath.value = pathParts.join('/')
-    }
-    newItemName.value = ''
-    createDialogVisible.value = true
-  } else if (command === 'rename') {
-    currentNode.value = longPressNode.value
-    currentData.value = longPressData.value
-    renameValue.value = longPressData.value.name
-    renameDialogVisible.value = true
-  } else if (command === 'delete') {
-    currentNode.value = longPressNode.value
-    currentData.value = longPressData.value
-    try {
-      await ElMessageBox.confirm(
-        `确定要删除 "${longPressData.value.name}" 吗？`,
-        '删除确认',
-        { type: 'warning' }
-      )
-      await deleteItem(longPressData.value.path)
-    } catch {
-      // 用户取消
-    }
-  }
-
-  longPressMenuVisible.value = false
 }
 
 // 处理工作区下拉菜单命令
@@ -642,226 +508,28 @@ async function deleteItem(path) {
   }
 }
 
-// 检测是否为触摸设备
-function isTouchDevice() {
-  return 'ontouchstart' in window || navigator.maxTouchPoints > 0
+// 悬停显示删除图标
+function handleMouseEnter(event, data) {
+  hoveredItem.value = data.path
 }
 
-// 长按检测 - 鼠标事件
-function handleMouseDown(event, node, data) {
-  // 只有左键才触发长按
-  if (event.button !== 0) return
-
-  // 清除之前的定时器
-  if (longPressTimer.value) {
-    clearTimeout(longPressTimer.value)
-  }
-
-  // 启动长按定时器
-  longPressTimer.value = setTimeout(() => {
-    // 长按触发
-    longPressNode.value = node
-    longPressData.value = data
-
-    // 对于文件，进入拖拽模式
-    if (!data.is_dir) {
-      isDragging.value = true
-      draggedData.value = data
-      // 显示提示而不是菜单
-      ElMessage.info('拖动到垃圾桶删除，或点击右上角菜单')
-    } else {
-      // 文件夹显示菜单
-      showLongPressMenu(event)
-    }
-  }, LONG_PRESS_DURATION)
+function handleMouseLeave() {
+  hoveredItem.value = null
 }
 
-function handleMouseUp() {
-  // 清除长按定时器
-  if (longPressTimer.value) {
-    clearTimeout(longPressTimer.value)
-    longPressTimer.value = null
-  }
-}
-
-// 长按检测 - 触摸事件
-function handleTouchStart(event, node, data) {
-  // 清除之前的定时器
-  if (longPressTimer.value) {
-    clearTimeout(longPressTimer.value)
-  }
-
-  // 启动长按定时器
-  longPressTimer.value = setTimeout(() => {
-    // 长按触发
-    longPressNode.value = node
-    longPressData.value = data
-
-    // 使用第一个触摸点的位置
-    const touch = event.touches[0]
-
-    // 对于文件，进入拖拽模式
-    if (!data.is_dir) {
-      isDragging.value = true
-      draggedData.value = data
-      ElMessage.info('拖动到垃圾桶删除')
-    } else {
-      // 文件夹显示菜单
-      showLongPressMenu({ clientX: touch.clientX, clientY: touch.clientY })
-    }
-  }, LONG_PRESS_DURATION)
-}
-
-function handleTouchEnd() {
-  // 清除长按定时器
-  if (longPressTimer.value) {
-    clearTimeout(longPressTimer.value)
-    longPressTimer.value = null
-  }
-}
-
-// 显示长按菜单
-function showLongPressMenu(event) {
-  // 计算菜单位置
-  longPressMenuPosition.value = {
-    x: event.clientX,
-    y: event.clientY
-  }
-
-  // 只对文件夹显示完整菜单，对文件只显示创建选项
-  const data = longPressData.value
-  if (!data.is_dir) {
-    // 如果是文件，在父文件夹显示菜单
-    const pathParts = data.path.replace(/\\/g, '/').split('/')
-    pathParts.pop() // 移除文件名
-    const parentPath = pathParts.join('/')
-
-    // 查找父文件夹节点
-    const parentNodes = treeRef.value?.store.nodesMap
-    let parentNode = null
-    if (parentNodes) {
-      for (const key in parentNodes) {
-        const node = parentNodes[key]
-        if (node.data.path === parentPath && node.data.is_dir) {
-          parentNode = node
-          break
-        }
-      }
-    }
-
-    if (parentNode) {
-      longPressNode.value = parentNode
-      longPressData.value = parentNode.data
-    }
-  }
-
-  longPressMenuVisible.value = true
-}
-
-// ========== 拖拽删除功能 ==========
-
-// 拖拽开始
-function handleDragStart(event, data) {
-  isDragging.value = true
-  draggedData.value = data
-  dragStartPosition.value = { x: event.clientX, y: event.clientY }
-
-  // 设置拖拽数据（兼容移动端）
-  if (event.dataTransfer) {
-    event.dataTransfer.effectAllowed = 'move'
-    event.dataTransfer.setData('text/plain', data.path)
-  }
-
-  // 添加拖拽样式
-  event.target.classList.add('is-dragging-source')
-}
-
-// 拖拽结束
-function handleDragEnd(event) {
-  isDragging.value = false
-  isDragOver.value = false
-  draggedData.value = null
-
-  // 移除拖拽样式
-  event.target.classList.remove('is-dragging-source')
-}
-
-// 拖拽进入垃圾桶区域
-function handleDragOver(event) {
-  isDragOver.value = true
-}
-
-// 拖拽离开垃圾桶区域
-function handleDragLeave(event) {
-  // 稍微延迟，避免在元素边缘快速切换
-  setTimeout(() => {
-    isDragOver.value = false
-  }, 50)
-}
-
-// 放置到垃圾桶
-async function handleDrop(event) {
-  isDragOver.value = false
-
-  if (!draggedData.value) {
-    return
-  }
-
+// 点击删除图标
+async function handleDeleteClick(data) {
   try {
     await ElMessageBox.confirm(
-      `确定要删除 "${draggedData.value.name}" 吗？`,
+      `确定要删除 "${data.name}" 吗？`,
       '删除确认',
       { type: 'warning' }
     )
-
-    await deleteItem(draggedData.value.path)
-    isDragging.value = false
-    draggedData.value = null
+    await deleteItem(data.path)
   } catch {
     // 用户取消
-    isDragging.value = false
-    draggedData.value = null
   }
 }
-
-// 触摸移动（模拟拖拽）
-function handleTouchMove(event) {
-  if (!isDragging.value || !draggedData.value) {
-    return
-  }
-
-  event.preventDefault()
-  isDragOver.value = true
-}
-
-// 触摸结束（模拟放置）
-async function handleTouchEndDrop(event) {
-  if (!isDragging.value || !draggedData.value) {
-    return
-  }
-
-  // 只有在垃圾桶区域才触发删除
-  if (isDragOver.value) {
-    try {
-      await ElMessageBox.confirm(
-        `确定要删除 "${draggedData.value.name}" 吗？`,
-        '删除确认',
-        { type: 'warning' }
-      )
-
-      await deleteItem(draggedData.value.path)
-    } catch {
-      // 用户取消
-    }
-  }
-
-  // 重置状态
-  isDragging.value = false
-  isDragOver.value = false
-  draggedData.value = null
-}
-
-
 
 // 加载当前工作区
 async function loadCurrentWorkspace() {
@@ -898,12 +566,6 @@ onMounted(async () => {
   }
 })
 
-onUnmounted(() => {
-  // 清理长按定时器
-  if (longPressTimer.value) {
-    clearTimeout(longPressTimer.value)
-  }
-})
 async function confirmWorkspace() {
   if (!workspaceName.value || !workspaceName.value.trim()) {
     ElMessage.warning('请输入工作区名称')
@@ -934,148 +596,6 @@ async function confirmWorkspace() {
   background: #1e1e1e;
   color: #cccccc;
   position: relative;
-}
-
-/* 拖拽垃圾桶区域 */
-.trash-drop-zone {
-  position: absolute;
-  bottom: 20px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 280px;
-  min-height: 80px;
-  padding: 20px;
-  z-index: 9999;
-  transition: all 0.3s ease;
-  animation: slideUp 0.3s ease-out;
-  pointer-events: auto;
-}
-
-.trash-container {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  background: rgba(255, 82, 82, 0.95);
-  border: 3px dashed #ff5252;
-  border-radius: 16px;
-  padding: 20px;
-  backdrop-filter: blur(10px);
-  box-shadow: 0 4px 20px rgba(255, 82, 82, 0.3);
-  transition: all 0.3s ease;
-}
-
-@keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translate(-50%, 30px);
-  }
-  to {
-    opacity: 1;
-    transform: translate(-50%, 0);
-  }
-}
-
-.trash-drop-zone.is-drag-over .trash-container {
-  background: rgba(255, 23, 68, 0.98);
-  border-color: #ff1744;
-  box-shadow: 0 0 30px rgba(255, 23, 68, 0.6);
-  transform: scale(1.05);
-}
-
-.trash-drop-zone.is-drag-over .trash-icon {
-  color: #ff1744;
-  transform: scale(1.3) rotate(-10deg);
-  animation: shake 0.5s ease-in-out infinite;
-}
-
-@keyframes shake {
-  0%, 100% { transform: scale(1.3) rotate(-10deg); }
-  50% { transform: scale(1.3) rotate(10deg); }
-}
-
-.trash-icon {
-  font-size: 56px;
-  color: #ff5252;
-  flex-shrink: 0;
-  transition: all 0.3s ease;
-}
-
-.trash-info {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  flex: 1;
-}
-
-.trash-text {
-  font-size: 15px;
-  color: #fff;
-  font-weight: 600;
-  line-height: 1.3;
-}
-
-.dragging-file-name {
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.8);
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  word-break: break-all;
-}
-
-/* 文件节点拖拽样式 */
-.file-node.is-dragging {
-  opacity: 0.5;
-  transform: scale(0.95);
-}
-
-.file-node.is-dragging-source {
-  cursor: grabbing;
-  background: rgba(64, 158, 255, 0.1);
-  border-radius: 4px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-}
-
-/* 移动端拖拽提示 */
-.touch-drag-hint {
-  position: fixed;
-  top: 60px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 20px;
-  background: rgba(64, 158, 255, 0.9);
-  border-radius: 8px;
-  font-size: 14px;
-  color: #fff;
-  z-index: 1001;
-  animation: slideDown 0.3s ease-out;
-  backdrop-filter: blur(10px);
-}
-
-@keyframes slideDown {
-  from {
-    opacity: 0;
-    transform: translate(-50%, -20px);
-  }
-  to {
-    opacity: 1;
-    transform: translate(-50%, 0);
-  }
-}
-
-/* 拖拽中的文件名 */
-.dragging-file-name {
-  font-size: 13px;
-  color: #ff5252;
-  margin-top: 4px;
-  max-width: 180px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .file-tree-header {
@@ -1157,6 +677,22 @@ async function confirmWorkspace() {
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 200px;
+  flex: 1;
+}
+
+.delete-icon {
+  margin-left: auto;
+  font-size: 14px;
+  color: #ff5252;
+  opacity: 0.7;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.delete-icon:hover {
+  opacity: 1;
+  color: #ff1744;
+  transform: scale(1.2);
 }
 
 :deep(.el-tree) {

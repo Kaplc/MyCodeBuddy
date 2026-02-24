@@ -331,6 +331,7 @@ async function checkConnection() {
     const startTime = Date.now()
     const response = await fetch('/api/health')
     const endTime = Date.now()
+    if (!isMounted) return
     serverLatency.value = endTime - startTime
     if (response.ok) {
       serverStatus.value = 'connected'
@@ -338,6 +339,7 @@ async function checkConnection() {
       serverStatus.value = 'disconnected'
     }
   } catch {
+    if (!isMounted) return
     serverStatus.value = 'disconnected'
     serverLatency.value = 0
   }
@@ -348,14 +350,16 @@ async function checkAiConnection() {
   try {
     // 检查 AI Chat 状态
     const chatResponse = await fetch('/api/ai/health')
+    if (!isMounted) return
     if (chatResponse.ok) {
       aiChatStatus.value = 'connected'
     } else {
       aiChatStatus.value = 'disconnected'
     }
-    
+
     // 检查 AI Tab 补全状态
     const tabResponse = await fetch('/api/ai/tab/health')
+    if (!isMounted) return
     if (tabResponse.ok) {
       const data = await tabResponse.json()
       aiTabStatus.value = 'connected'
@@ -363,7 +367,7 @@ async function checkAiConnection() {
     } else {
       aiTabStatus.value = 'disconnected'
     }
-    
+
     // 综合状态
     if (aiChatStatus.value === 'connected' || aiTabStatus.value === 'connected') {
       aiStatus.value = 'connected'
@@ -371,6 +375,7 @@ async function checkAiConnection() {
       aiStatus.value = 'disconnected'
     }
   } catch {
+    if (!isMounted) return
     aiChatStatus.value = 'disconnected'
     aiTabStatus.value = 'disconnected'
     aiStatus.value = 'disconnected'
@@ -545,8 +550,10 @@ function loadSettings() {
 
 // 定时检查连接
 let connectionCheckInterval = null
+let isMounted = false
 
 onMounted(() => {
+  isMounted = true
   checkConnection()
   checkAiConnection()
   connectionCheckInterval = setInterval(() => {
@@ -565,6 +572,7 @@ watch(showSettings, (val) => {
 })
 
 onUnmounted(() => {
+  isMounted = false
   if (connectionCheckInterval) {
     clearInterval(connectionCheckInterval)
   }

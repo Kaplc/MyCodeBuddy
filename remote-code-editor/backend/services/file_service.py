@@ -111,6 +111,15 @@ class FileService:
                 stat = item.stat()
                 item_info["size"] = stat.st_size
                 item_info["modified"] = datetime.fromtimestamp(stat.st_mtime).isoformat()
+            elif item.is_dir():
+                # 检查文件夹是否为空（只检查非隐藏文件）
+                try:
+                    has_visible_content = any(
+                        not child.name.startswith('.') for child in item.iterdir()
+                    )
+                    item_info["is_empty"] = not has_visible_content
+                except PermissionError:
+                    item_info["is_empty"] = True  # 无权限时视为空
             
             items.append(item_info)
         

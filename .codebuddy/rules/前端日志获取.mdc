@@ -1,0 +1,84 @@
+---
+description: 
+alwaysApply: true
+enabled: true
+updatedAt: 2026-02-24T02:02:07.457Z
+provider: 
+---
+
+每次开发完成需要获取前端日志自测
+
+---
+description: 
+alwaysApply: true
+enabled: true
+updatedAt: 2026-02-24T01:59:00.926Z
+provider: 
+---
+
+# 前端日志获取 Skill
+
+## 功能描述
+帮助用户获取和分析前端日志，用于诊断前端错误。
+
+## 日志文件位置
+- **日志文件路径**: `remote-code-editor/backend/logs/django.log`
+- **日志标识**: 前端日志以 `[前端日志]` 开头
+
+## 使用方法
+
+### 1. 查看所有前端日志
+```bash
+# Windows PowerShell
+Select-String -Path "remote-code-editor\backend\logs\django.log" -Pattern "前端日志" | Select-Object -Last 50
+
+# 或者使用 Get-Content
+Get-Content "remote-code-editor\backend\logs\django.log" | Select-String "前端日志"
+```
+
+### 2. 查看最近的前端错误日志
+```bash
+Select-String -Path "remote-code-editor\backend\logs\django.log" -Pattern "\[前端日志\].*\[ERROR\]" | Select-Object -Last 20
+```
+
+### 3. 实时监控前端日志
+```bash
+Get-Content "remote-code-editor\backend\logs\django.log" -Wait | Select-String "前端日志"
+```
+
+### 4. 按日志级别过滤
+```bash
+# 错误日志
+Select-String -Path "remote-code-editor\backend\logs\django.log" -Pattern "\[前端日志\].*\[ERROR\]"
+
+# 警告日志
+Select-String -Path "remote-code-editor\backend\logs\django.log" -Pattern "\[前端日志\].*\[WARN\]"
+
+# 信息日志
+Select-String -Path "remote-code-editor\backend\logs\django.log" -Pattern "\[前端日志\].*\[INFO\]"
+```
+
+## 日志格式
+```
+[前端日志] [LEVEL] TIMESTAMP | URL | MESSAGE | 额外信息: {...}
+```
+
+## 前端日志API端点
+- **URL**: `POST /api/frontend-log/`
+- **参数**:
+  - `level`: 日志级别 (error, warn, info)
+  - `message`: 日志消息
+  - `timestamp`: 时间戳
+  - `url`: 页面URL
+  - 其他额外信息...
+
+## 自动捕获的错误类型
+1. **全局JavaScript错误** - `window.onerror`
+2. **未处理的Promise拒绝** - `unhandledrejection`
+3. **Vue组件错误** - `app.config.errorHandler`
+4. **Vue警告** - `app.config.warnHandler`
+
+## 注意事项
+1. 日志文件可能较大，建议使用 `Select-Object -Last N` 限制输出行数
+2. 前端日志发送是异步的，错误发生后可能需要几秒钟才能在日志中看到
+3. 如果日志文件不存在，检查Django日志配置是否正确
