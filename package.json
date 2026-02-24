@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "monaco-textmate": "^3.0.1",
+    "onigasm": "^2.2.5"
+  }
+}

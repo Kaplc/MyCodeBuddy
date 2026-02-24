@@ -41,3 +41,4 @@ remote-code-editor/workspaces/
 # 其他配置文件
 workspace_config.json
 remote-code-editor/backend/logs/django.log
+remote-code-editor/backend/.env

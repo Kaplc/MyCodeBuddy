@@ -1,13 +1,14 @@
 {
-  "workspace_path": "C:\\Users\\v_zhyyzheng\\Desktop\\MyCodeBuddy\\remote-code-editor\\workspaces\\test-fix\\workspaces\\test-workspace",
+  "workspace_path": "C:\\Users\\v_zhyyzheng\\Desktop\\MyCodeBuddy\\remote-code-editor\\workspaces\\ShaderLearn",
   "workspaces": [
     "c:\\Users\\v_zhyyzheng\\Desktop\\MyCodeBuddy\\remote-code-editor\\workspaces\\default",
     "c:\\Users\\v_zhyyzheng\\Desktop\\MyCodeBuddy\\remote-code-editor\\workspaces\\test-workspace",
-    "C:\\Users\\v_zhyyzheng\\Desktop\\MyCodeBuddy\\remote-code-editor\\workspaces\\default",
     "C:\\Users\\v_zhyyzheng\\Desktop\\MyCodeBuddy\\remote-code-editor\\workspaces\\test-fix\\workspaces\\test-workspace",
     "C:\\Users\\v_zhyyzheng\\Desktop\\MyCodeBuddy\\remote-code-editor\\workspaces\\test-fix\\workspaces\\test-workspace\\workspaces\\default",
     "C:\\Users\\v_zhyyzheng\\Desktop\\MyCodeBuddy\\remote-code-editor\\workspaces\\test-fix\\workspaces\\test-workspace\\workspaces\\default\\workspaces\\test-workspace\\workspaces\\test-workspace\\workspaces\\default",
     "C:\\Users\\v_zhyyzheng\\Desktop\\MyCodeBuddy\\remote-code-editor\\workspaces\\test-empty",
-    "C:\\Users\\v_zhyyzheng\\Desktop\\MyCodeBuddy\\remote-code-editor\\workspaces\\test-workspace"
+    "C:\\Users\\v_zhyyzheng\\Desktop\\MyCodeBuddy\\remote-code-editor\\workspaces\\Hello-World",
+    "C:\\Users\\v_zhyyzheng\\Desktop\\MyCodeBuddy\\remote-code-editor\\workspaces\\gitignore",
+    "C:\\Users\\v_zhyyzheng\\Desktop\\MyCodeBuddy\\remote-code-editor\\workspaces\\ShaderLearn"
   ]
 }
