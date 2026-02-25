@@ -5,11 +5,27 @@ Django后端启动脚本
 import os
 import sys
 from pathlib import Path
+import shutil
 
 # 添加当前目录到 Python 路径
 sys.path.insert(0, str(Path(__file__).parent.resolve()))
 
-# 确保工作目录存在
+# 检查并创建 .env 文件
+env_file = Path(__file__).parent / '.env'
+env_example_file = Path(__file__).parent / '.env.example'
+
+if not env_file.exists():
+    if env_example_file.exists():
+        print(f"[提示] 未找到 .env 文件，正在从模板创建...")
+        shutil.copy(env_example_file, env_file)
+        print(f"[成功] 已创建 .env 文件: {env_file}")
+        print(f"[警告] 请编辑 .env 文件并填入真实的 API 密钥后重新启动服务器")
+        print(f"       文件位置: {env_file.absolute()}")
+    else:
+        print(f"[警告] 未找到 .env 文件和 .env.example 模板文件")
+        print(f"       请手动创建 .env 文件: {env_file.absolute()}")
+
+# 加载环境变量
 from dotenv import load_dotenv
 load_dotenv()
 
