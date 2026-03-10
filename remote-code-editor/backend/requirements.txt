@@ -1,8 +1,13 @@
 # Django核心
 Django>=4.2,<5.0
 
+# Django类型存根（用于类型检查）
+django-stubs>=4.2
+django-stubs-ext>=4.2
+
 # Django REST framework（RESTful API）
 djangorestframework>=3.14
+djangorestframework-stubs>=3.14
 
 # Django CORS（跨域支持）
 django-cors-headers>=4.3
