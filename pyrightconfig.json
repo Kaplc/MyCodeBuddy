@@ -1,0 +1,21 @@
+{
+  "include": [
+    "remote-code-editor/backend"
+  ],
+  "exclude": [
+    "**/__pycache__",
+    "**/node_modules",
+    "**/migrations"
+  ],
+  "venvPath": ".",
+  "pythonVersion": "3.9",
+  "typeCheckingMode": "basic",
+  "reportMissingTypeStubs": false,
+  "reportUnknownVariableType": false,
+  "reportUnknownMemberType": false,
+  "reportUnknownParameterType": false,
+  "reportUnusedParameter": false,
+  "reportExplicitAny": false,
+  "reportAny": false,
+  "reportUnusedImport": "none"
+}
