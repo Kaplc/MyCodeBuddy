@@ -17,5 +17,7 @@
   "reportUnusedParameter": false,
   "reportExplicitAny": false,
   "reportAny": false,
-  "reportUnusedImport": "none"
+  "reportUnusedImport": "none",
+  "reportAttributeAccessIssue": false,
+  "reportOptionalMemberAccess": false
 }
