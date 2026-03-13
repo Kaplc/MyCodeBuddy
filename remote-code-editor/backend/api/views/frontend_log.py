@@ -41,7 +41,6 @@ def frontend_log(request):
     if extra_info:
         log_msg += f" | 额外信息: {extra_info}"
 
-    # 根据级别记录日志
     if level == 'error':
         logger.error(log_msg)
     elif level == 'warn':

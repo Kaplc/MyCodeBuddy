@@ -67,6 +67,18 @@
           </div>
         </template>
         <template v-else>
+          <!-- 引用的文件和消息内容在同一行 -->
+          <span v-if="msg.attachedFiles && msg.attachedFiles.length > 0" class="inline-attachments">
+            <span
+              v-for="(file, fIndex) in msg.attachedFiles"
+              :key="fIndex"
+              class="attachment-tag"
+            >
+              <el-icon v-if="file.is_dir"><Folder /></el-icon>
+              <el-icon v-else><Document /></el-icon>
+              <span>{{ file.name }}</span>
+            </span>
+          </span>
           <pre>{{ msg.content }}</pre>
         </template>
       </div>
@@ -157,7 +169,7 @@
 <script setup>
 import { ref, watch, nextTick, onMounted, computed, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { ChatLineRound, DocumentCopy, CopyDocument, ArrowDown } from '@element-plus/icons-vue'
+import { ChatLineRound, DocumentCopy, CopyDocument, ArrowDown, Folder, Document } from '@element-plus/icons-vue'
 import hljs from 'highlight.js/lib/core'
 import javascript from 'highlight.js/lib/languages/javascript'
 import python from 'highlight.js/lib/languages/python'
@@ -607,6 +619,29 @@ async function handleCopy(content) {
   white-space: pre-wrap;
   word-wrap: break-word;
   font-family: inherit;
+}
+
+/* 消息中的引用文件样式 - 与文本同行 */
+.inline-attachments {
+  display: inline;
+}
+
+.inline-attachments .attachment-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  margin-right: 6px;
+  background: rgba(64, 158, 255, 0.15);
+  border: 1px solid rgba(64, 158, 255, 0.3);
+  border-radius: 4px;
+  font-size: 12px;
+  color: #409eff;
+  vertical-align: middle;
+}
+
+.inline-attachments .attachment-tag .el-icon {
+  font-size: 12px;
 }
 
 .message-actions {

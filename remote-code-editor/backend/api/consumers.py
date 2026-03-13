@@ -126,23 +126,32 @@ class AIChatConsumer(AsyncWebsocketConsumer):
         if not file_paths:
             return ""
         
+        # 获取工作区绝对路径
+        workspace = getattr(self, 'workspace', '')
+        
         file_contents_parts = ["以下是引用的文件内容：\n"]
         
         for file_path in file_paths:
             try:
+                # 如果是相对路径，拼接工作区路径
+                if not os.path.isabs(file_path) and workspace:
+                    abs_file_path = os.path.join(workspace, file_path)
+                else:
+                    abs_file_path = file_path
+                
                 # 检查文件是否存在
-                if not os.path.exists(file_path):
+                if not os.path.exists(abs_file_path):
                     file_contents_parts.append(f"\n### 文件: {os.path.basename(file_path)}\n错误：文件不存在\n")
                     continue
                 
                 # 检查文件大小（限制为 100KB）
-                file_size = os.path.getsize(file_path)
+                file_size = os.path.getsize(abs_file_path)
                 if file_size > 100 * 1024:
                     file_contents_parts.append(f"\n### 文件: {os.path.basename(file_path)}\n错误：文件过大（超过 100KB），无法读取\n")
                     continue
                 
                 # 读取文件内容
-                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                with open(abs_file_path, 'r', encoding='utf-8', errors='ignore') as f:
                     content = f.read()
                 
                 # 添加文件内容
@@ -170,6 +179,9 @@ class AIChatConsumer(AsyncWebsocketConsumer):
         # 如果是 Agent 或 Ask 模式，更新工作区
         if (agent_mode or ai_mode in ['ask', 'agent']) and workspace:
             self.tool_executor.set_workspace(workspace)
+        
+        # 设置工作区路径，供 read_attached_files 使用
+        self.workspace = workspace
         
         # 如果提供了对话ID，从数据库加载历史消息
         if conversation_id:

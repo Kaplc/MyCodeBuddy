@@ -609,6 +609,7 @@ async function handleSendMessage(content, attachedFiles = []) {
   messages.value.push({
     role: 'user',
     content: content,
+    attachedFiles: attachedFiles,
     timestamp: new Date()
   })
 
@@ -720,7 +721,9 @@ function confirmFileSelection() {
 // 暴露方法
 defineExpose({
   sendMessage,
-  clearMessages
+  clearMessages,
+  toggleCollapse,
+  isCollapsed
 })
 </script>
 

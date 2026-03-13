@@ -36,7 +36,15 @@ requests>=2.31
 # 环境变量
 python-dotenv>=1.0
 
+# LangGraph (使用本地兼容层替代)
+# langgraph>=0.2.0  # 不支持 Python 3.8
+
 # 测试
 pytest>=7.4
 pytest-django>=4.7
 pytest-asyncio>=0.21
+
+# 代码验证架构
+mypy>=1.0  # 类型检查
+pylint>=3.0  # 静态分析
+z3-solver>=4.12  # SMT 约束求解（形式验证）

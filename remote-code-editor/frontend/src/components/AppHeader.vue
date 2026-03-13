@@ -2,7 +2,7 @@
   <header class="app-header" :style="{ fontSize: uiFontSize + 'px' }">
     <div class="header-left">
       <el-icon class="logo-icon"><Edit /></el-icon>
-      <span class="app-title">RemoteBuddy</span>
+      <span class="app-title">AIBuilder</span>
       
       <!-- 导航菜单 -->
       <nav class="nav-menu">
@@ -92,7 +92,7 @@ import {
   Document, FolderOpened, DocumentCopy, Back, Right,
   Operation, CopyDocument, Search, Switch, Fold, 
   ChatDotRound, Monitor, ZoomIn, ZoomOut, Aim,
-  MagicStick, Reading, Key, InfoFilled
+  Reading, Key, InfoFilled
 } from '@element-plus/icons-vue'
 
 // Props

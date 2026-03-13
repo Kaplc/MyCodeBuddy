@@ -7,7 +7,13 @@ from .workspace import get_workspace, set_workspace, list_workspaces, delete_wor
 from .git import git_status, git_check_config, git_list_repos, git_list_github_repos, git_clone, git_commit, git_push, git_pull, git_switch_branch, git_history
 from .search import search_content
 from .ai_chat import list_conversations, create_conversation, get_conversation, update_conversation, delete_conversation, add_message, clear_conversation, ai_code_complete
+from workflow.views import list_workflows, create_workflow, get_workflow, update_workflow, delete_workflow, run_workflow, list_workflow_tools, list_models, reload_ai_config
 from .frontend_log import frontend_log
+from .agent_api import (
+    run_agent, verify_code_api, generate_tests,
+    index_workspace, search_symbol, get_references,
+    get_call_graph, get_file_outline
+)
 
 __all__ = [
     # 健康检查
@@ -22,6 +28,13 @@ __all__ = [
     'search_content',
     # AI对话
     'list_conversations', 'create_conversation', 'get_conversation', 'update_conversation', 'delete_conversation', 'add_message', 'clear_conversation', 'ai_code_complete',
+    # Workflow
+    'list_workflows', 'create_workflow', 'get_workflow', 'update_workflow', 'delete_workflow', 'run_workflow',
+    'list_workflow_tools', 'list_models', 'reload_ai_config',
     # 前端日志
     'frontend_log',
+    # Agent API
+    'run_agent', 'verify_code_api', 'generate_tests',
+    'index_workspace', 'search_symbol', 'get_references',
+    'get_call_graph', 'get_file_outline',
 ]

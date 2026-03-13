@@ -56,6 +56,28 @@ urlpatterns = [
     path('conversations/message/', views.add_message, name='conversations_message'),
     path('conversations/clear/', views.clear_conversation, name='conversations_clear'),
 
+    # Workflow API
+    path('workflow/list/', views.list_workflows, name='workflow_list'),
+    path('workflow/create/', views.create_workflow, name='workflow_create'),
+    path('workflow/get/', views.get_workflow, name='workflow_get'),
+    path('workflow/update/', views.update_workflow, name='workflow_update'),
+    path('workflow/delete/', views.delete_workflow, name='workflow_delete'),
+    path('workflow/run/', views.run_workflow, name='workflow_run'),
+    path('workflow/tools/', views.list_workflow_tools, name='workflow_tools'),
+    path('workflow/models/', views.list_models, name='workflow_models'),  # 来自 workflow.views
+    path('workflow/reload-config/', views.reload_ai_config, name='workflow_reload_config'),
+    path('workflow/debug-log/', views.debug_log, name='workflow_debug_log'),
+
     # 前端日志API
     path('frontend-log/', views.frontend_log, name='frontend_log'),
+
+    # Agent API（代码验证架构）
+    path('agent/run/', views.run_agent, name='agent_run'),
+    path('agent/verify/', views.verify_code_api, name='agent_verify'),
+    path('agent/generate-tests/', views.generate_tests, name='agent_generate_tests'),
+    path('agent/index/', views.index_workspace, name='agent_index'),
+    path('agent/search/', views.search_symbol, name='agent_search'),
+    path('agent/references/', views.get_references, name='agent_references'),
+    path('agent/call-graph/', views.get_call_graph, name='agent_call_graph'),
+    path('agent/outline/', views.get_file_outline, name='agent_outline'),
 ]

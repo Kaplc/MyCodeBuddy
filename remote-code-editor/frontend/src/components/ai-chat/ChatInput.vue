@@ -21,7 +21,8 @@
     <!-- 文件引用显示 -->
     <div v-if="attachedFiles.length > 0" class="attached-files">
       <div v-for="(file, index) in attachedFiles" :key="index" class="file-tag">
-        <el-icon><Document /></el-icon>
+        <el-icon v-if="file.is_dir"><Folder /></el-icon>
+        <el-icon v-else><Document /></el-icon>
         <span class="file-name">{{ file.name }}</span>
         <el-icon class="remove-icon" @click="removeFile(index)"><Close /></el-icon>
       </div>
@@ -104,7 +105,7 @@
 
 <script setup>
 import { ref, watch } from 'vue'
-import { ChatDotRound, Setting, Loading, VideoPause, Promotion, Warning, Paperclip, Document, Close, Upload } from '@element-plus/icons-vue'
+import { ChatDotRound, Setting, Loading, VideoPause, Promotion, Warning, Paperclip, Document, Folder, Close, Upload } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import axios from 'axios'
 const GlmIcon = 'https://www.zhipuai.cn/favicon.png'
@@ -628,16 +629,28 @@ defineExpose({
   border-radius: 2px;
   margin-right: 6px;
   vertical-align: middle;
+  display: inline-block;
 }
 
-/* 下拉选项中的图标和文字对齐 */
-:deep(.el-select-dropdown__item) {
+/* 下拉选项内容容器 - 确保图标和文字水平对齐 */
+::deep(.el-select-dropdown__item) {
+  display: flex !important;
+  align-items: center !important;
+}
+
+::deep(.el-select-dropdown__item > img),
+::deep(.el-select-dropdown__item > .option-icon) {
+  flex-shrink: 0;
+  margin-right: 6px;
+}
+
+/* 修复 select prefix 图标对齐 */
+::deep(.el-select .el-input__prefix) {
   display: flex;
   align-items: center;
 }
 
-:deep(.el-select-dropdown__item .el-icon) {
-  margin-right: 6px;
+::deep(.el-select .el-input__prefix .el-icon) {
   display: flex;
   align-items: center;
 }

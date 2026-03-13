@@ -21,6 +21,14 @@ export const API_CONFIG = {
     RENAME_FILE: '/api/file/rename/',
     
     // AI 相关
-    AI_CHAT: '/api/ai/chat'
+    AI_CHAT: '/api/ai/chat',
+
+    // Workflow 相关
+    WORKFLOW_LIST: '/api/workflow/list/',
+    WORKFLOW_CREATE: '/api/workflow/create/',
+    WORKFLOW_GET: '/api/workflow/get/',
+    WORKFLOW_UPDATE: '/api/workflow/update/',
+    WORKFLOW_DELETE: '/api/workflow/delete/',
+    WORKFLOW_RUN: '/api/workflow/run/'
   }
 }

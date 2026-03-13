@@ -1,3 +1,32 @@
-2026-02-24 17:19:26,508 INFO httpx _client:1025 - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
-2026-02-24 17:20:47,630 INFO httpx _client:1025 - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
-2026-02-24 17:20:57,177 INFO httpx _client:1025 - HTTP Request: POST https://open.bigmodel.cn/api/paas/v4/chat/completions "HTTP/1.1 200 OK"
+2026-03-13 09:57:31,818 INFO workflow request_log:15 - [Request] GET /api/health/ | query: {}
+2026-03-13 09:57:31,818 INFO workflow request_log:15 - [Request] GET /api/ai/health/ | query: {}
+2026-03-13 09:57:31,823 INFO workflow request_log:51 - [Response] GET /api/health/ | status: 200
+2026-03-13 09:57:31,823 INFO workflow request_log:51 - [Response] GET /api/ai/health/ | status: 200
+2026-03-13 09:57:31,836 INFO workflow request_log:15 - [Request] GET /api/ai/tab/health/ | query: {}
+2026-03-13 09:57:31,837 INFO workflow request_log:51 - [Response] GET /api/ai/tab/health/ | status: 200
+2026-03-13 09:58:31,816 INFO workflow request_log:15 - [Request] GET /api/health/ | query: {}
+2026-03-13 09:58:31,816 INFO workflow request_log:15 - [Request] GET /api/ai/health/ | query: {}
+2026-03-13 09:58:31,817 INFO workflow request_log:51 - [Response] GET /api/health/ | status: 200
+2026-03-13 09:58:31,818 INFO workflow request_log:51 - [Response] GET /api/ai/health/ | status: 200
+2026-03-13 09:58:31,834 INFO workflow request_log:15 - [Request] GET /api/ai/tab/health/ | query: {}
+2026-03-13 09:58:31,835 INFO workflow request_log:51 - [Response] GET /api/ai/tab/health/ | status: 200
+2026-03-13 09:59:31,820 INFO workflow request_log:15 - [Request] GET /api/health/ | query: {}
+2026-03-13 09:59:31,821 INFO workflow request_log:15 - [Request] GET /api/ai/health/ | query: {}
+2026-03-13 09:59:31,822 INFO workflow request_log:51 - [Response] GET /api/health/ | status: 200
+2026-03-13 09:59:31,822 INFO workflow request_log:51 - [Response] GET /api/ai/health/ | status: 200
+2026-03-13 09:59:31,839 INFO workflow request_log:15 - [Request] GET /api/ai/tab/health/ | query: {}
+2026-03-13 09:59:31,841 INFO workflow request_log:51 - [Response] GET /api/ai/tab/health/ | status: 200
+2026-03-13 10:00:31,810 INFO workflow request_log:15 - [Request] GET /api/health/ | query: {}
+2026-03-13 10:00:31,811 INFO workflow request_log:15 - [Request] GET /api/ai/health/ | query: {}
+2026-03-13 10:00:31,812 INFO workflow request_log:51 - [Response] GET /api/health/ | status: 200
+2026-03-13 10:00:31,812 INFO workflow request_log:51 - [Response] GET /api/ai/health/ | status: 200
+2026-03-13 10:00:31,833 INFO workflow request_log:15 - [Request] GET /api/ai/tab/health/ | query: {}
+2026-03-13 10:00:31,833 INFO workflow request_log:51 - [Response] GET /api/ai/tab/health/ | status: 200
+2026-03-13 10:00:46,338 INFO workflow request_log:15 - [Request] GET /api/workflow/tools/ | query: {}
+2026-03-13 10:00:46,338 INFO workflow request_log:15 - [Request] GET /api/workflow/list/ | query: {'include_temp': 'true'}
+2026-03-13 10:00:46,339 INFO workflow request_log:15 - [Request] GET /api/workflow/models/ | query: {}
+2026-03-13 10:00:46,339 INFO workflow request_log:15 - [Request] GET /api/workflow/get/ | query: {'id': '34'}
+2026-03-13 10:00:46,341 INFO workflow request_log:51 - [Response] GET /api/workflow/tools/ | status: 200
+2026-03-13 10:00:46,346 INFO workflow request_log:51 - [Response] GET /api/workflow/models/ | status: 200
+2026-03-13 10:00:46,350 INFO workflow request_log:51 - [Response] GET /api/workflow/list/ | status: 200
+2026-03-13 10:00:46,351 INFO workflow request_log:51 - [Response] GET /api/workflow/get/ | status: 200

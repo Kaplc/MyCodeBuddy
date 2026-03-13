@@ -1,7 +1,8 @@
 {
-  "name": "remote-code-editor-frontend",
+  "name": "aibuilder-frontend",
   "version": "1.0.0",
-  "description": "远程代码编辑器前端 - Vue 3 + Monaco Editor",
+  "description": "AIBuilder - AI 可视化工作流编辑器",
+
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,6 +11,10 @@
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.1",
+    "@vue-flow/background": "*",
+    "@vue-flow/controls": "*",
+    "@vue-flow/core": "*",
+    "@vue-flow/minimap": "*",
     "axios": "^1.6.5",
     "element-plus": "^2.5.3",
     "highlight.js": "^11.11.1",

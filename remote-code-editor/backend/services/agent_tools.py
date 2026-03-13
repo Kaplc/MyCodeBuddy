@@ -139,6 +139,191 @@ AGENT_TOOLS = [
                 "required": ["path"]
             }
         }
+    },
+    # ===== 代码验证工具 =====
+    {
+        "type": "function",
+        "function": {
+            "name": "generate_tests",
+            "description": "为指定代码生成单元测试。用于自动创建测试用例，提高代码质量。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "code": {
+                        "type": "string",
+                        "description": "要生成测试的代码内容"
+                    },
+                    "language": {
+                        "type": "string",
+                        "description": "编程语言，如 'python'"
+                    },
+                    "test_framework": {
+                        "type": "string",
+                        "description": "测试框架，如 'pytest'（默认 pytest）"
+                    }
+                },
+                "required": ["code"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_tests",
+            "description": "运行项目的测试套件。用于验证代码修改后是否通过测试。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "test_path": {
+                        "type": "string",
+                        "description": "测试文件或目录的相对路径（可选，默认运行所有测试）"
+                    },
+                    "verbose": {
+                        "type": "boolean",
+                        "description": "是否显示详细输出（默认 true）"
+                    }
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_symbol",
+            "description": "在项目中搜索代码符号（函数、类、变量等）。用于理解代码结构或查找定义。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "symbol_name": {
+                        "type": "string",
+                        "description": "要搜索的符号名称"
+                    }
+                },
+                "required": ["symbol_name"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_code_references",
+            "description": "查找代码中某个符号的所有引用位置。用于代码重构或理解代码调用关系。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file_path": {
+                        "type": "string",
+                        "description": "文件相对路径"
+                    },
+                    "symbol_name": {
+                        "type": "string",
+                        "description": "符号名称（函数名、类名等）"
+                    }
+                },
+                "required": ["file_path", "symbol_name"]
+            }
+        }
+    },
+    # ===== 验证流水线工具 =====
+    {
+        "type": "function",
+        "function": {
+            "name": "run_verification_pipeline",
+            "description": "运行完整的代码验证流水线。包括语法检查、静态分析、类型检查、运行测试等。用于全面验证代码质量。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "code": {
+                        "type": "string",
+                        "description": "要验证的代码内容"
+                    },
+                    "language": {
+                        "type": "string",
+                        "description": "编程语言，如 'python'"
+                    },
+                    "skip_tests": {
+                        "type": "boolean",
+                        "description": "是否跳过测试运行（默认 false）"
+                    }
+                },
+                "required": ["code", "language"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "index_workspace",
+            "description": "索引工作区代码，建立代码图索引。用于后续的代码搜索、引用查找等功能。首次搜索前需要先运行此工具。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "要索引的目录路径（相对于工作区）"
+                    }
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_call_graph",
+            "description": "获取函数的调用图（调用了哪些函数、被哪些函数调用）。用于理解代码调用关系。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "function_name": {
+                        "type": "string",
+                        "description": "函数名称"
+                    },
+                    "depth": {
+                        "type": "integer",
+                        "description": "调用深度（默认2）"
+                    }
+                },
+                "required": ["function_name"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_file_outline",
+            "description": "获取文件的结构大纲（类、函数、导入等）。用于快速了解文件结构。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "文件相对路径"
+                    }
+                },
+                "required": ["path"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "verify_with_z3",
+            "description": "使用 Z3 SMT 求解器验证代码逻辑（形式化验证）。用于验证代码的正确性断言。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "code": {
+                        "type": "string",
+                        "description": "要验证的代码（需要包含断言）"
+                    },
+                    "property": {
+                        "type": "string",
+                        "description": "要验证的属性描述"
+                    }
+                },
+                "required": ["code"]
+            }
+        }
     }
 ]
 
@@ -237,6 +422,46 @@ class AgentToolExecutor:
                 return await self._create_directory(arguments.get("path", ""))
             elif tool_name == "delete_file":
                 return await self._delete_file(arguments.get("path", ""))
+            # 代码验证工具
+            elif tool_name == "generate_tests":
+                return await self._generate_tests(
+                    arguments.get("code", ""),
+                    arguments.get("language", "python"),
+                    arguments.get("test_framework", "pytest")
+                )
+            elif tool_name == "run_tests":
+                return await self._run_tests(
+                    arguments.get("test_path", ""),
+                    arguments.get("verbose", True)
+                )
+            elif tool_name == "search_symbol":
+                return await self._search_symbol(arguments.get("symbol_name", ""))
+            elif tool_name == "get_code_references":
+                return await self._get_code_references(
+                    arguments.get("file_path", ""),
+                    arguments.get("symbol_name", "")
+                )
+            # 验证流水线工具
+            elif tool_name == "run_verification_pipeline":
+                return await self._run_verification_pipeline(
+                    arguments.get("code", ""),
+                    arguments.get("language", "python"),
+                    arguments.get("skip_tests", False)
+                )
+            elif tool_name == "index_workspace":
+                return await self._index_workspace(arguments.get("path", ""))
+            elif tool_name == "get_call_graph":
+                return await self._get_call_graph(
+                    arguments.get("function_name", ""),
+                    arguments.get("depth", 2)
+                )
+            elif tool_name == "get_file_outline":
+                return await self._get_file_outline(arguments.get("path", ""))
+            elif tool_name == "verify_with_z3":
+                return await self._verify_with_z3(
+                    arguments.get("code", ""),
+                    arguments.get("property", "")
+                )
             else:
                 return {"success": False, "error": f"未知的工具: {tool_name}"}
         except Exception as e:
@@ -502,6 +727,225 @@ class AgentToolExecutor:
                 "path": path,
                 "message": f"已删除: {path}"
             }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    # ===== 代码验证工具方法 =====
+    
+    async def _generate_tests(self, code: str, language: str = "python", 
+                             test_framework: str = "pytest") -> Dict[str, Any]:
+        """生成测试代码"""
+        try:
+            if not code:
+                return {"success": False, "error": "代码不能为空"}
+            
+            if language != "python":
+                return {"success": False, "error": f"暂不支持 {language} 的测试生成"}
+            
+            # 使用 verify 模块的测试生成功能
+            from verifier.runtime_test import generate_tests_for_code
+            
+            test_code = generate_tests_for_code(code, test_framework)
+            
+            return {
+                "success": True,
+                "test_code": test_code,
+                "message": "测试代码生成成功"
+            }
+        except ImportError as e:
+            return {"success": False, "error": f"测试生成模块导入失败: {str(e)}"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    async def _run_tests(self, test_path: str = "", verbose: bool = True) -> Dict[str, Any]:
+        """运行测试"""
+        try:
+            from verifier.runtime_test import run_pytest
+            
+            # 如果没有指定测试路径，使用工作区的 tests 目录
+            if not test_path:
+                test_path = "."
+            
+            result = run_pytest(self.workspace, test_path, verbose)
+            
+            return {
+                "success": result["success"],
+                "output": result.get("output", ""),
+                "return_code": result.get("return_code", -1),
+                "summary": result.get("summary", "")
+            }
+        except ImportError as e:
+            return {"success": False, "error": f"测试运行模块导入失败: {str(e)}"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    async def _search_symbol(self, symbol_name: str) -> Dict[str, Any]:
+        """搜索代码符号"""
+        try:
+            if not symbol_name:
+                return {"success": False, "error": "符号名称不能为空"}
+            
+            from code_index.searcher import CodeSearcher
+            
+            searcher = CodeSearcher(self.workspace)
+            results = searcher.search(symbol_name)
+            
+            return {
+                "success": True,
+                "symbol": symbol_name,
+                "results": results,
+                "count": len(results)
+            }
+        except ImportError as e:
+            return {"success": False, "error": f"搜索模块导入失败: {str(e)}"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    async def _get_code_references(self, file_path: str, symbol_name: str) -> Dict[str, Any]:
+        """获取代码引用"""
+        try:
+            if not file_path or not symbol_name:
+                return {"success": False, "error": "文件路径和符号名称不能为空"}
+            
+            from code_index.searcher import CodeSearcher
+            
+            graph = await self._get_code_graph()
+            searcher = CodeSearcher(graph)
+            references = searcher.search_references(symbol_name)
+            
+            return {
+                "success": True,
+                "file": file_path,
+                "symbol": symbol_name,
+                "references": references,
+                "count": len(references)
+            }
+        except ImportError as e:
+            return {"success": False, "error": f"搜索模块导入失败: {str(e)}"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    # ===== 验证流水线工具方法 =====
+    
+    async def _run_verification_pipeline(self, code: str, language: str = "python", 
+                                        skip_tests: bool = False) -> Dict[str, Any]:
+        """运行完整验证流水线"""
+        try:
+            from pipeline.verify_pipeline import VerifyPipeline
+            
+            # 配置流水线
+            pipeline = VerifyPipeline(
+                enable_runtime=not skip_tests,
+                enable_z3=False,
+                enable_symbolic=False
+            )
+            result = pipeline.run(code)
+            
+            # 转换为字典格式
+            result_dict = result.to_dict() if hasattr(result, 'to_dict') else result
+            
+            return {
+                "success": result_dict.get("success", False),
+                "stages": result_dict.get("stages", []),
+                "summary": f"验证{'通过' if result_dict.get('success') else '失败'} - {result_dict.get('total_duration', '0s')}",
+                "errors": [s for s in result_dict.get("stages", []) if not s.get("passed")]
+            }
+        except ImportError as e:
+            return {"success": False, "error": f"流水线模块导入失败: {str(e)}"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    # 缓存索引图
+    _code_graph_cache = None
+    
+    async def _get_code_graph(self):
+        """获取或创建代码图"""
+        if self._code_graph_cache is None:
+            from code_index.indexer import CodeIndexer
+            indexer = CodeIndexer(str(self.workspace))
+            self._code_graph_cache = indexer.index()
+        return self._code_graph_cache
+    
+    async def _index_workspace(self, path: str = "") -> Dict[str, Any]:
+        """索引工作区"""
+        try:
+            target_path = self.workspace if not path else self._resolve_path(path)
+            
+            from code_index.indexer import CodeIndexer
+            
+            indexer = CodeIndexer(str(target_path))
+            graph = indexer.index()
+            
+            # 更新缓存
+            self._code_graph_cache = graph
+            
+            return {
+                "success": True,
+                "indexed_files": len(graph.file_symbols),
+                "symbols_count": len(graph.symbols),
+                "message": f"索引完成，共 {len(graph.symbols)} 个符号"
+            }
+        except ImportError as e:
+            return {"success": False, "error": f"索引模块导入失败: {str(e)}"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    async def _get_call_graph(self, function_name: str, depth: int = 2) -> Dict[str, Any]:
+        """获取调用图"""
+        try:
+            from code_index.searcher import CodeSearcher
+            
+            graph = await self._get_code_graph()
+            searcher = CodeSearcher(graph)
+            call_graph = searcher.get_call_graph(function_name, depth)
+            
+            return {
+                "success": True,
+                "function": function_name,
+                "call_graph": call_graph
+            }
+        except ImportError as e:
+            return {"success": False, "error": f"搜索模块导入失败: {str(e)}"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    async def _get_file_outline(self, path: str) -> Dict[str, Any]:
+        """获取文件大纲"""
+        try:
+            if not path:
+                return {"success": False, "error": "文件路径不能为空"}
+            
+            from code_index.searcher import CodeSearcher
+            
+            graph = await self._get_code_graph()
+            searcher = CodeSearcher(graph)
+            outline = searcher.get_file_outline(path)
+            
+            return {
+                "success": True,
+                "outline": outline
+            }
+        except ImportError as e:
+            return {"success": False, "error": f"搜索模块导入失败: {str(e)}"}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    async def _verify_with_z3(self, code: str, property: str = "") -> Dict[str, Any]:
+        """Z3 形式化验证"""
+        try:
+            from verifier.z3_verify import verify_code_properties
+            
+            result = verify_code_properties(code, property)
+            
+            return {
+                "success": result["success"],
+                "verified": result.get("verified", False),
+                "model": result.get("model"),
+                "counterexample": result.get("counterexample"),
+                "summary": result.get("summary", "")
+            }
+        except ImportError as e:
+            return {"success": False, "error": f"Z3 模块导入失败: {str(e)}"}
         except Exception as e:
             return {"success": False, "error": str(e)}
 

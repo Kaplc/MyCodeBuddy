@@ -11,12 +11,19 @@ load_dotenv()
 # 构建路径
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# 添加 backend 目录到 Python 路径，使 backend.xxx 模块可导入
+import sys
+backend_dir = str(BASE_DIR)
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
+
+
 # 安全配置
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'django-insecure-dev-key-change-in-production-12345')
 
 DEBUG = os.getenv('DEBUG', 'True').lower() == 'true'
 
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,testserver').split(',')
 
 # URL配置
 ROOT_URLCONF = 'config.urls'
@@ -38,6 +45,7 @@ INSTALLED_APPS = [
     
     # 本地应用
     'api',
+    'workflow',
 ]
 
 # 中间件
@@ -45,6 +53,7 @@ MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'corsheaders.middleware.CorsMiddleware',  # CORS中间件，放在CommonMiddleware之前
     'django.middleware.common.CommonMiddleware',
+    'config.middleware.request_log.RequestLogMiddleware',  # 请求日志中间件
 ]
 
 # CORS配置
@@ -144,18 +153,28 @@ LOGGING = {
         'file': {
             'class': 'logging.handlers.TimedRotatingFileHandler',
             'filename': os.path.join(BASE_DIR, 'logs', 'django.log'),
-            'when': 'M',             # 按分钟轮转
-            'interval': 20,          # 每20分钟创建一个新文件
-            'backupCount': 504,      # 保留7天日志（7天*24小时*3个/小时=504）
+            'when': 'M',          # 按分钟轮转
+            'interval': 10,       # 每10分钟轮转一次
+            'backupCount': 10,    # 保留10个日志文件
             'formatter': 'detailed',
             'encoding': 'utf-8',
+            'delay': False,       # 立即打开文件
         },
         'frontend_file': {
             'class': 'logging.handlers.TimedRotatingFileHandler',
             'filename': os.path.join(BASE_DIR, 'logs', 'frontend.log'),
-            'when': 'M',             # 按分钟轮转
-            'interval': 20,          # 每20分钟创建一个新文件
-            'backupCount': 504,      # 保留7天日志
+            'when': 'M',          # 按分钟轮转
+            'interval': 10,       # 每10分钟轮转一次
+            'backupCount': 10,    # 保留10个日志文件
+            'formatter': 'detailed',
+            'encoding': 'utf-8',
+        },
+        'api_file': {
+            'class': 'logging.handlers.TimedRotatingFileHandler',
+            'filename': os.path.join(BASE_DIR, 'logs', 'api.log'),
+            'when': 'M',          # 按分钟轮转
+            'interval': 10,       # 每10分钟轮转一次
+            'backupCount': 10,    # 保留10个日志文件
             'formatter': 'detailed',
             'encoding': 'utf-8',
         },
@@ -175,8 +194,18 @@ LOGGING = {
             'level': 'INFO',
             'propagate': False,
         },
+        'llm': {
+            'handlers': ['api_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
         'frontend': {
             'handlers': ['console', 'frontend_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'workflow': {
+            'handlers': ['console', 'file'],
             'level': 'INFO',
             'propagate': False,
         },

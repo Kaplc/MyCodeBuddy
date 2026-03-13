@@ -4,9 +4,13 @@ AI服务模块
 """
 import os
 import json
+import logging
 import asyncio
 from typing import List, Dict, AsyncGenerator, Optional, Any
 from zhipuai import ZhipuAI
+
+# LLM API 日志记录器
+llm_logger = logging.getLogger('llm')
 
 
 class AIService:
@@ -81,6 +85,9 @@ class AIService:
         # 启用 thinking 参数（大多数模型支持）
         if thinking_mode:
             params["thinking"] = {"type": "enabled"}
+
+        # 记录 API 请求数据
+        log_api_request(params, mode='chat_stream')
 
         try:
             # 在线程池中运行同步的 SDK 调用，避免阻塞事件循环
@@ -164,7 +171,10 @@ class AIService:
             "max_tokens": self.max_tokens,
             "temperature": 0.3  # Agent 模式使用较低温度提高准确性
         }
-        
+
+        # 记录 API 请求数据
+        log_api_request(params, mode='agent_chat')
+
         try:
             loop = asyncio.get_event_loop()
             response = await loop.run_in_executor(
@@ -272,3 +282,34 @@ class AIService:
             self.max_tokens = max_tokens
         if temperature is not None:
             self.temperature = temperature
+
+
+def log_api_request(params: Dict, mode: str = 'chat'):
+    """
+    记录 API 请求日志到 api.log 文件
+
+    Args:
+        params: 发送给 API 的原始参数
+        mode: 调用模式 ('chat' 或 'agent_chat')
+    """
+    try:
+        # 创建日志条目
+        log_entry = {
+            "timestamp": __import__('datetime').datetime.now().isoformat(),
+            "mode": mode,
+            "model": params.get("model", "unknown"),
+            "temperature": params.get("temperature"),
+            "max_tokens": params.get("max_tokens"),
+            "stream": params.get("stream"),
+            "messages_count": len(params.get("messages", [])),
+            "tools_count": len(params.get("tools", [])),
+            "messages": params.get("messages", []),
+            "tools": params.get("tools", []),
+            "thinking": params.get("thinking")
+        }
+
+        # 记录到日志文件
+        llm_logger.info(f"\n{'='*80}\n{json.dumps(log_entry, ensure_ascii=False, indent=2)}\n{'='*80}")
+    except Exception as e:
+        # 日志记录失败不应影响主流程
+        print(f"[API Logger] 记录日志失败: {str(e)}")

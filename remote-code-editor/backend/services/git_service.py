@@ -2,12 +2,14 @@
 Git服务模块
 提供Git操作的核心逻辑
 """
+from __future__ import annotations
+
 import os
 import asyncio
 import subprocess
 import requests
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, Optional, List
 from git import Repo, GitCommandError, InvalidGitRepositoryError
 from git.exc import NoSuchPathError
 from django.conf import settings
@@ -24,7 +26,7 @@ class GitService:
             workspace_path: 工作目录根路径
         """
         self.workspace = Path(workspace_path).resolve() if workspace_path else None
-        self.repo: Repo | None = None
+        self.repo: Optional[Repo] = None
         self._git_configured = None
         if self.workspace:
             self._init_repo()
@@ -62,7 +64,7 @@ class GitService:
         """检查当前工作目录是否是Git仓库"""
         return self.repo is not None
     
-    def check_git_config(self) -> dict[str, Any]:
+    def check_git_config(self) -> Dict[str, Any]:
         """
         检查Git配置状态
         
@@ -121,7 +123,7 @@ class GitService:
                 'error': f'检查Git配置失败: {str(e)}'
             }
     
-    async def clone(self, repo_url: str) -> dict[str, Any]:
+    async def clone(self, repo_url: str) -> Dict[str, Any]:
         """
         克隆远程仓库（使用系统配置的Git凭据）
         克隆到 workspaces 目录下，每个仓库作为独立文件夹
@@ -192,7 +194,7 @@ class GitService:
                 'error': f'克隆失败: {str(e)}'
             }
     
-    async def get_status(self) -> dict[str, Any]:
+    async def get_status(self) -> Dict[str, Any]:
         """
         获取Git状态
         
@@ -255,7 +257,7 @@ class GitService:
                 'error': str(e)
             }
     
-    async def switch_branch(self, branch_name: str) -> dict[str, Any]:
+    async def switch_branch(self, branch_name: str) -> Dict[str, Any]:
         """
         切换分支
         
@@ -294,7 +296,7 @@ class GitService:
                 'error': f'切换分支失败: {str(e)}'
             }
     
-    async def commit(self, message: str, files: list[str] | None = None) -> dict[str, Any]:
+    async def commit(self, message: str, files: Optional[List] = None) -> Dict[str, Any]:
         """
         提交更改
         
@@ -334,7 +336,7 @@ class GitService:
                 'error': f'提交失败: {str(e)}'
             }
     
-    async def push(self, remote: str = 'origin', branch: str | None = None) -> dict[str, Any]:
+    async def push(self, remote: str = 'origin', branch: Optional[str] = None) -> Dict[str, Any]:
         """
         推送到远程仓库
         
@@ -369,7 +371,7 @@ class GitService:
                 'error': f'推送失败: {str(e)}'
             }
     
-    async def pull(self, remote: str = 'origin', branch: str | None = None) -> dict[str, Any]:
+    async def pull(self, remote: str = 'origin', branch: Optional[str] = None) -> Dict[str, Any]:
         """
         从远程仓库拉取
         
@@ -404,7 +406,7 @@ class GitService:
                 'error': f'拉取失败: {str(e)}'
             }
     
-    async def get_commit_history(self, limit: int = 20) -> dict[str, Any]:
+    async def get_commit_history(self, limit: int = 20) -> Dict[str, Any]:
         """
         获取提交历史
         
@@ -441,7 +443,7 @@ class GitService:
                 'error': str(e)
             }
     
-    async def list_git_repos(self, search_path: str | None = None) -> dict[str, Any]:
+    async def list_git_repos(self, search_path: Optional[str] = None) -> Dict[str, Any]:
         """
         搜索并列出Git仓库
         
@@ -526,8 +528,8 @@ class GitService:
                 'error': str(e)
             }
     
-    async def list_github_repos(self, github_token: str | None = None, 
-                                  repo_type: str = 'all') -> dict[str, Any]:
+    async def list_github_repos(self, github_token: Optional[str] = None,
+                                  repo_type: str = 'all') -> Dict[str, Any]:
         """
         获取GitHub用户的仓库列表
         

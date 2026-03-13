@@ -32,7 +32,7 @@ load_dotenv()
 WORKSPACE_PATH = os.getenv('WORKSPACE_PATH') or str(Path.home() / 'code-editor-workspace')
 Path(WORKSPACE_PATH).mkdir(parents=True, exist_ok=True)
 
-print("Remote Code Editor starting...")
+print("AIBuilder starting...")
 print(f"Workspace: {WORKSPACE_PATH}")
 
 # 设置Django设置模块

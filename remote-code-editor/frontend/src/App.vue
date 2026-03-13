@@ -20,6 +20,21 @@
             <el-icon><Search /></el-icon>
           </div>
         </el-tooltip>
+        <el-tooltip :content="showCodeEditor ? '关闭编辑器' : '编辑器'" placement="right">
+          <div class="nav-item" :class="{ active: showCodeEditor }" @click="toggleCodeEditor">
+            <el-icon><EditPen /></el-icon>
+          </div>
+        </el-tooltip>
+        <el-tooltip :content="showWorkflowPanel ? '关闭工作流' : '工作流'" placement="right">
+          <div class="nav-item" :class="{ active: showWorkflowPanel }" @click="toggleWorkflowPanel">
+            <el-icon><TrendCharts /></el-icon>
+          </div>
+        </el-tooltip>
+        <el-tooltip :content="showAiPanel ? '关闭 AI 对话' : 'AI 对话'" placement="right">
+          <div class="nav-item" :class="{ active: showAiPanel }" @click="toggleAiPanel">
+            <el-icon><ChatDotRound /></el-icon>
+          </div>
+        </el-tooltip>
       </aside>
 
       <!-- 左侧：文件树 -->
@@ -50,7 +65,7 @@
       ></div>
 
       <!-- 中间：代码编辑器 -->
-      <section class="editor-section" :style="{ flex: editorFlex }">
+      <section v-show="showCodeEditor" class="editor-section" :style="{ flex: editorFlex }">
         <CodeEditor
           ref="codeEditorRef"
           :file="currentFile"
@@ -59,10 +74,16 @@
           @cursor-change="handleCursorChange"
         />
       </section>
+
+      <!-- 工作流编辑器 -->
+      <section v-if="showWorkflowPanel" class="workflow-section" :style="{ flex: editorFlex }">
+        <WorkflowPanel @close="handleWorkflowClose" />
+      </section>
+
       
       <!-- 拖拽条2：编辑器和AI助手之间 -->
       <div
-        v-show="showAiPanel && aiSidebarWidth > 24"
+        v-show="showCodeEditor && showAiPanel && aiSidebarWidth > 24"
         class="resize-handle"
         @mousedown="startResize($event, 'right')"
       ></div>
@@ -167,21 +188,40 @@
       <GitPanel />
     </el-dialog>
 
+
+
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Search, FolderOpened } from '@element-plus/icons-vue'
+import { Search, FolderOpened, ChatDotRound, Document, Operation, Share, EditPen, TrendCharts } from '@element-plus/icons-vue'
+import axios from 'axios'
 import SearchPanel from './components/SearchPanel.vue'
 import 'highlight.js/styles/atom-one-dark.css'
 import FileTree from './components/FileTree.vue'
 import CodeEditor from './components/CodeEditor.vue'
 import AIChat from './components/AIChat.vue'
 import GitPanel from './components/GitPanel.vue'
+import WorkflowPanel from './components/WorkflowPanel.vue'
 import AppHeader from './components/AppHeader.vue'
 import StatusBar from './components/StatusBar.vue'
+
+// 前端日志发送到后端
+async function sendFrontendLog(level, message, extra = {}) {
+  try {
+    await axios.post('/api/frontend-log/', {
+      level,
+      message,
+      timestamp: new Date().toISOString(),
+      url: window.location.href,
+      ...extra
+    })
+  } catch (e) {
+    // 静默失败
+  }
+}
 
 // 组件引用
 const fileTreeRef = ref(null)
@@ -216,7 +256,9 @@ const editorFlex = ref(1)
 
 // 面板展开/折叠（从 localStorage 读取状态）
 const showFileTree = ref(localStorage.getItem('showFileTree') !== 'false')
+const showWorkflowPanel = ref(false)
 const showAiPanel = ref(true)
+const showCodeEditor = ref(true)
 
 // 设置
 const showSettings = ref(false)
@@ -224,6 +266,12 @@ const showAppearanceSettings = ref(false)
 const showEditorSettings = ref(false)
 const showGitDialog = ref(false)
 const showSearchPanel = ref(false)
+
+// 记录展开状态以便恢复
+const prevShowFileTree = ref(false)
+const prevShowAiPanel = ref(false)
+
+
 const editorFontSize = ref(14)
 const aiFontSize = ref(13)
 const uiFontSize = ref(14)
@@ -252,8 +300,11 @@ function handleHeaderCommand(command) {
   }
 }
 
+
 // 切换文件树（与搜索互斥）
 function toggleFileTree() {
+  const action = showFileTree.value ? '收起' : '展开'
+  sendFrontendLog('info', `点击文件树按钮: ${action}`)
   if (showFileTree.value) {
     // 如果文件树已打开，关闭它
     showFileTree.value = false
@@ -268,6 +319,8 @@ function toggleFileTree() {
 
 // 切换搜索面板（与文件树互斥）
 function toggleSearch() {
+  const action = showSearchPanel.value ? '关闭' : '打开'
+  sendFrontendLog('info', `点击搜索按钮: ${action}`)
   if (showSearchPanel.value) {
     // 如果搜索已打开，关闭它，打开文件树
     showSearchPanel.value = false
@@ -280,6 +333,45 @@ function toggleSearch() {
     localStorage.setItem('showFileTree', 'false')
   }
 }
+
+function toggleAiPanel() {
+  const action = showAiPanel.value ? '关闭' : '打开'
+  sendFrontendLog('info', `点击AI对话按钮: ${action}`)
+  showAiPanel.value = !showAiPanel.value
+}
+
+function toggleCodeEditor() {
+  const action = showCodeEditor.value ? '关闭' : '打开'
+  sendFrontendLog('info', `点击编辑器按钮: ${action}`)
+  if (showCodeEditor.value) {
+    showCodeEditor.value = false
+  } else {
+    showCodeEditor.value = true
+    showWorkflowPanel.value = false
+  }
+}
+
+function toggleWorkflowPanel() {
+  const action = showWorkflowPanel.value ? '关闭' : '打开'
+  sendFrontendLog('info', `点击工作流按钮: ${action}`)
+  if (showWorkflowPanel.value) {
+    showWorkflowPanel.value = false
+    showCodeEditor.value = true
+  } else {
+    showWorkflowPanel.value = true
+    showCodeEditor.value = false
+    // 打开工作流时自动折叠AI助手（仅当AIChat展开时才折叠）
+    if (aiChatRef.value && !aiChatRef.value.isCollapsed) {
+      aiChatRef.value.toggleCollapse()
+    }
+  }
+}
+
+function handleWorkflowClose() {
+  showWorkflowPanel.value = false
+  showCodeEditor.value = true
+}
+
 
 // 拖拽状态
 let isResizing = false
@@ -767,6 +859,13 @@ body {
   position: relative;
 }
 
+.workflow-section {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  position: relative;
+}
+
 .ai-sidebar {
   flex-shrink: 0;
   overflow: visible;
@@ -813,6 +912,8 @@ body {
   background: #1e1e1e;
   border-top: 1px solid #333;
 }
+
+
 
 /* 设置对话框样式 */
 .settings-content {
