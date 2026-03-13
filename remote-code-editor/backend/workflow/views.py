@@ -9,7 +9,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.forms.models import model_to_dict
 from django.db import transaction
-from .models import Workflow
+from .models import Workflow, WorkflowState
 from .validators import validate_workflow_graph
 from .executor import run_workflow_by_id, run_workflow_by_graph
 from .cache import clear_graph_cache
@@ -67,8 +67,8 @@ def create_workflow(request):
     if is_temp:
         existing_temp = Workflow.objects.filter(name=name, is_temp=True).first()
         if existing_temp:
-            # 更新并返回已有的临时工作流
-            existing_temp.graph = graph
+            # 更新并返回已有的临时工作流（需要将dict序列化为JSON字符串）
+            existing_temp.graph = json.dumps(graph, ensure_ascii=False)
             existing_temp.version += 1
             existing_temp.save(update_fields=['graph', 'version', 'updated_at'])
             clear_graph_cache(str(existing_temp.id))
@@ -91,7 +91,8 @@ def create_workflow(request):
             'existing_version': existing_workflow.version,
         }, status=409)
 
-    workflow = Workflow.objects.create(name=name, graph=graph, is_temp=is_temp)
+    # 将 graph 对象序列化为 JSON 字符串存储
+    workflow = Workflow.objects.create(name=name, graph=json.dumps(graph, ensure_ascii=False), is_temp=is_temp)
     # 将 graph 解析为 Python 对象再序列化，确保返回标准 JSON
     graph_data = workflow.get_graph()
     logger.info(f"[Workflow] create 返回的 graph_data: {graph_data}")
@@ -167,7 +168,8 @@ def update_workflow(request):
     with transaction.atomic():
         if name:
             workflow.name = str(name)
-        workflow.graph = graph
+        # 将 graph 对象序列化为 JSON 字符串存储
+        workflow.graph = json.dumps(graph, ensure_ascii=False)
         workflow.version += 1
         workflow.save(update_fields=['name', 'graph', 'version', 'updated_at'])
 
@@ -202,6 +204,13 @@ def delete_workflow(request):
 
     workflow.delete()
     clear_graph_cache(str(workflow_id))
+
+    # 如果删除的是上次打开的工作流，清理记录
+    last_id = WorkflowState.get_last_workflow_id()
+    if last_id and str(last_id) == str(workflow_id):
+        WorkflowState.clear_last_workflow_id()
+        logger.info(f"[Workflow] 删除工作流时清理上次记录 | id: {workflow_id}")
+
     return JsonResponse({'success': True})
 
 
@@ -294,7 +303,6 @@ def run_workflow(request):
 
         logger.info(f"[Workflow] 执行完成: nodes={node_count}, edges={edge_count}, time={execution_time}ms")
         return JsonResponse(response)
-
     except Exception as e:
         import traceback
         error_msg = str(e)
@@ -307,6 +315,43 @@ def run_workflow(request):
                 'execution_time_ms': int((time.time() - start_time) * 1000)
             }
         }, status=500)
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_last_workflow(request):
+    """获取上次打开的工作流ID"""
+    last_id = WorkflowState.get_last_workflow_id()
+    logger.info(f"[Workflow] 获取上次工作流ID: {last_id}")
+    return JsonResponse({'last_workflow_id': last_id})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def set_last_workflow(request):
+    """设置上次打开的工作流ID"""
+    try:
+        payload = json.loads(request.body or '{}')
+    except json.JSONDecodeError:
+        return JsonResponse({'error': '无效的JSON数据'}, status=400)
+
+    workflow_id = payload.get('workflow_id')
+    if workflow_id:
+        WorkflowState.set_last_workflow_id(workflow_id)
+        logger.info(f"[Workflow] 设置上次工作流ID: {workflow_id}")
+        return JsonResponse({'success': True, 'last_workflow_id': workflow_id})
+    else:
+        WorkflowState.clear_last_workflow_id()
+        logger.info(f"[Workflow] 清除上次工作流ID")
+        return JsonResponse({'success': True, 'last_workflow_id': None})
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def clear_last_workflow(request):
+    """清除上次打开的工作流ID"""
+    WorkflowState.clear_last_workflow_id()
+    logger.info(f"[Workflow] 清除上次工作流ID")
+    return JsonResponse({'success': True})
 
 
 @csrf_exempt

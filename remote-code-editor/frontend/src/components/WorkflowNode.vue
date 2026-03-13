@@ -49,12 +49,13 @@
         <span class="node-subtitle">{{ subtitle }}</span>
       </template>
     </div>
-    <Handle type="target" :position="Position.Left" class="node-handle" :style="{ background: accent }" />
+    <Handle type="target" :position="Position.Left" id="input" class="node-handle" :style="{ background: accent }" />
     
     <!-- 普通节点: 单个输出 -->
     <Handle 
       v-if="!multiOutputNodes.includes(nodeType)"
       type="source" 
+      id="output"
       :position="Position.Right" 
       class="node-handle" 
       :style="{ background: accent }" 

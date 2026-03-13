@@ -3,6 +3,7 @@ API URL路由配置
 """
 from django.urls import path
 from . import views
+from workflow import views as workflow_views
 
 urlpatterns = [
     # 健康检查
@@ -66,7 +67,11 @@ urlpatterns = [
     path('workflow/tools/', views.list_workflow_tools, name='workflow_tools'),
     path('workflow/models/', views.list_models, name='workflow_models'),  # 来自 workflow.views
     path('workflow/reload-config/', views.reload_ai_config, name='workflow_reload_config'),
-    path('workflow/debug-log/', views.debug_log, name='workflow_debug_log'),
+    path('workflow/debug-log/', workflow_views.debug_log, name='workflow_debug_log'),
+    # 工作流状态API
+    path('workflow/last/', workflow_views.get_last_workflow, name='workflow_last_get'),
+    path('workflow/last/set/', workflow_views.set_last_workflow, name='workflow_last_set'),
+    path('workflow/last/clear/', workflow_views.clear_last_workflow, name='workflow_last_clear'),
 
     # 前端日志API
     path('frontend-log/', views.frontend_log, name='frontend_log'),

@@ -29,3 +29,38 @@ class Workflow(models.Model):
 
     def __str__(self) -> str:
         return f"{self.name} (v{self.version})"
+
+
+class WorkflowState(models.Model):
+    """工作流状态（存储上次打开的工作流ID等）"""
+
+    key = models.CharField(max_length=50, unique=True, verbose_name='键')
+    value = models.CharField(max_length=200, verbose_name='值')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
+
+    class Meta:
+        db_table = 'ai_workflow_state'
+        verbose_name = '工作流状态'
+        verbose_name_plural = '工作流状态'
+
+    def __str__(self) -> str:
+        return f"{self.key}: {self.value}"
+
+    @classmethod
+    def get_last_workflow_id(cls):
+        """获取上次打开的工作流ID"""
+        state = cls.objects.filter(key='last_workflow_id').first()
+        return state.value if state else None
+
+    @classmethod
+    def set_last_workflow_id(cls, workflow_id):
+        """设置上次打开的工作流ID"""
+        cls.objects.update_or_create(
+            key='last_workflow_id',
+            defaults={'value': str(workflow_id)}
+        )
+
+    @classmethod
+    def clear_last_workflow_id(cls):
+        """清除上次打开的工作流ID"""
+        cls.objects.filter(key='last_workflow_id').delete()

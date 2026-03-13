@@ -668,22 +668,26 @@ function onDrop(event) {
   syncGraphJson()
 }
 
-function onConnect(params) {
+async function onConnect(params) {
   console.log('[工作流] 连接节点:', params)
+  console.log('[工作流] 当前所有边:', JSON.stringify(edges.value.map(e => ({ id: e.id, source: e.source, target: e.target, targetHandle: e.targetHandle }))))
+
+  // 只检查源端口（右侧输出）：同一个源只能有一条输出线，新的覆盖旧的
+  const sourceId = String(params.source)
+  const sourceHandle = params.sourceHandle
+  console.log('[工作流] 查找源:', sourceId, 'handle:', sourceHandle)
   
-  // 检查端口是否已被占用
-  const sourceHasConnection = edges.value.some(
-    e => e.source === params.source && e.sourceHandle === params.sourceHandle
+  const existingSourceEdge = edges.value.find(
+    e => String(e.source) === sourceId && e.sourceHandle === sourceHandle
   )
-  const targetHasConnection = edges.value.some(
-    e => e.target === params.target && e.targetHandle === params.targetHandle
-  )
-  
-  if (sourceHasConnection || targetHasConnection) {
-    ElMessage.warning('该端口已有连接')
-    return
+  console.log('[工作流] 找到的旧连接:', existingSourceEdge)
+  if (existingSourceEdge) {
+    console.log('[工作流] 移除源端口旧连接:', existingSourceEdge.id)
+    removeEdges([existingSourceEdge])
+    // 等待 VueFlow 更新完成
+    await nextTick()
   }
-  
+
   // 保存历史
   saveHistory(`连接节点:${params.source}->${params.target}`)
   
@@ -745,15 +749,30 @@ function onNodesDelete(event) {
   })
 }
 
-// 验证连接是否有效（限制每个端口只能有一个连接）
+// 验证连接是否有效（只能从右侧连接到左侧）
 function isValidConnection(connection) {
-  const sourceHasConnection = edges.value.some(
-    e => e.source === connection.source && e.sourceHandle === connection.sourceHandle
+  // 规则1：只能从源节点的右侧连接到目标节点的左侧
+  const validSourceHandles = ['output', 'true', 'false', 'loop', 'completed']
+  const isSourceHandleValid = connection.sourceHandle && (
+    connection.sourceHandle === 'output' ||
+    validSourceHandles.includes(connection.sourceHandle) ||
+    connection.sourceHandle.startsWith('output-')
   )
-  const targetHasConnection = edges.value.some(
-    e => e.target === connection.target && e.targetHandle === connection.targetHandle
-  )
-  return !sourceHasConnection && !targetHasConnection
+  const isTargetHandleValid = connection.targetHandle === 'input'
+
+  // 注意：端口占用检查在 onConnect 中处理，这里只检查方向
+  if (!isSourceHandleValid || !isTargetHandleValid) {
+    return false
+  }
+
+  // 规则3：目标节点必须在源节点右侧
+  const sourceNode = nodes.value.find(n => n.id === connection.source)
+  const targetNode = nodes.value.find(n => n.id === connection.target)
+  if (sourceNode && targetNode && targetNode.position.x <= sourceNode.position.x) {
+    return false
+  }
+
+  return true
 }
 
 // 当前选中的节点ID
@@ -1182,13 +1201,19 @@ function getToolArgumentsSchema(toolName) {
   return schemas[toolName] || {}
 }
 
-function decorateGraph(data) {
+async function decorateGraph(data) {
+  console.log('[decorateGraph] 收到的 data:', data, '类型:', typeof data)
   // 处理各种可能的数据格式
   if (!data) {
     data = {}
   }
-  // 如果传入的是字符串（JSON），先解析为对象
-  if (typeof data === 'string') {
+  
+  // 如果已经是对象，直接使用
+  if (typeof data === 'object' && data !== null && !Array.isArray(data)) {
+    console.log('[decorateGraph] data 是对象，直接使用')
+    // 继续处理
+  } else if (typeof data === 'string') {
+    // 如果传入的是字符串（JSON），先解析为对象
     try {
       data = JSON.parse(data)
     } catch (e) {
@@ -1196,12 +1221,26 @@ function decorateGraph(data) {
       // 如果解析失败，尝试作为空对象处理
       data = {}
     }
-  }
-  // 确保 data 是对象
-  if (typeof data !== 'object' || data === null) {
+  } else {
+    // 其他类型（数组、原始类型等）
+    console.warn('[decorateGraph] data 不是对象也不是字符串，设为空对象:', typeof data)
     data = {}
   }
   
+  console.log('[decorateGraph] 处理后的 data:', data)
+
+  // 先构建边数据（基于当前的 nodeIdSet）
+  const nodeIdSet = new Set((data.nodes || []).map(n => String(n.id)))
+  console.log('[decorateGraph] nodeIdSet:', nodeIdSet)
+  console.log('[decorateGraph] 原始 edges:', data.edges)
+
+  // 过滤掉 source 或 target 无效的边
+  const validEdges = (data.edges || []).filter(
+    edge => edge.source && edge.target && nodeIdSet.has(String(edge.source)) && nodeIdSet.has(String(edge.target))
+  )
+  console.log('[decorateGraph] validEdges:', validEdges)
+
+  // 先设置节点
   nodes.value = (data.nodes || []).map((node, index) => ({
     id: String(node.id),
     type: 'workflow',
@@ -1213,24 +1252,29 @@ function decorateGraph(data) {
     }
   }))
 
-  // 构建节点 ID 集合，用于验证边的有效性
-  const nodeIdSet = new Set(nodes.value.map(n => String(n.id)))
+  // 使用 nextTick 确保节点先渲染完成，然后再设置边
+  await nextTick()
 
-  // 过滤掉 source 或 target 无效的边
-  const validEdges = (data.edges || []).filter(
-    edge => edge.source && edge.target && nodeIdSet.has(String(edge.source)) && nodeIdSet.has(String(edge.target))
-  )
-
-  edges.value = validEdges.map((edge, index) => ({
+  // 构建完整的边数据
+  const newEdges = validEdges.map((edge, index) => ({
     id: edge.id || `e-${edge.source}-${edge.target}-${index}`,
     source: String(edge.source),
-    sourceHandle: edge.sourceHandle || undefined,
+    // 兼容 sourceHandle（驼峰）和 source_handle（下划线）两种格式
+    sourceHandle: edge.sourceHandle || edge.source_handle || undefined,
     target: String(edge.target),
+    // 兼容 targetHandle（驼峰）和 target_handle（下划线）两种格式
+    targetHandle: edge.targetHandle || edge.target_handle || undefined,
     label: edge.condition || '',
     markerEnd: { type: MarkerType.ArrowClosed },
     style: { stroke: '#ffffff', strokeWidth: 2 },
     data: { condition: edge.condition || '' }
   }))
+
+  // 使用 addEdges API 添加边（与手动连接保持一致）
+  if (newEdges.length > 0) {
+    addEdges(newEdges)
+  }
+  console.log('[decorateGraph] edges.value 设置后:', JSON.parse(JSON.stringify(edges.value)))
 
   if (validEdges.length < (data.edges || []).length) {
     console.warn(`[工作流] 过滤了 ${(data.edges || []).length - validEdges.length} 条无效边`)
@@ -1241,12 +1285,12 @@ function syncGraphJson() {
   graphJson.value = JSON.stringify(buildGraphJson(), null, 2)
 }
 
-function applyGraphJson() {
+async function applyGraphJson() {
   try {
     const parsed = JSON.parse(graphJson.value || '{}')
     // 保存历史
     saveHistory('应用JSON配置')
-    decorateGraph(parsed)
+    await decorateGraph(parsed)
     ElMessage.success('JSON 已应用')
   } catch (error) {
     ElMessage.error('JSON 解析失败')
@@ -1272,6 +1316,10 @@ function closeContextMenu() {
 async function handleDeleteWorkflow() {
   if (!contextMenuRow.value) return
 
+  const deleteId = contextMenuRow.value.id
+  const deleteName = contextMenuRow.value.name
+  console.log('[前端日志] [INFO] 开始删除工作流 | id:', deleteId, 'name:', deleteName)
+
   try {
     await ElMessageBox.confirm(
       `确定要删除工作流 "${contextMenuRow.value.name}" 吗？此操作不可恢复。`,
@@ -1283,12 +1331,13 @@ async function handleDeleteWorkflow() {
       }
     )
 
-    await axios.post('/api/workflow/delete/', { id: contextMenuRow.value.id })
+    await axios.post('/api/workflow/delete/', { id: deleteId })
 
+    console.log('[前端日志] [INFO] 删除工作流成功 | id:', deleteId, 'name:', deleteName)
     ElMessage.success('工作流已删除')
 
     // 如果删除的是当前选中的工作流，清空选中状态
-    if (currentWorkflowId.value === contextMenuRow.value.id) {
+    if (currentWorkflowId.value === deleteId) {
       currentWorkflowId.value = ''
       workflowName.value = ''
       nodes.value = []
@@ -1296,11 +1345,17 @@ async function handleDeleteWorkflow() {
       syncGraphJson()
     }
 
+    // 清除前端和后端的上次工作流记录
+    if (localStorage.getItem('last_workflow_id') === deleteId) {
+      localStorage.removeItem('last_workflow_id')
+      await clearLastWorkflowIdFromBackend()
+    }
+
     // 刷新列表
     await refreshWorkflows()
   } catch (error) {
     if (error !== 'cancel') {
-      console.error('删除工作流失败:', error)
+      console.error('[前端日志] [ERROR] 删除工作流失败 | id:', deleteId, 'error:', error)
       ElMessage.error('删除失败: ' + (error.response?.data?.error || error.message))
     }
   }
@@ -1328,10 +1383,26 @@ async function handleCreateWorkflow() {
     },
     is_temp: false
   }
-  
+
+  console.log('[前端日志] [INFO] 开始新建工作流 | name:', name)
+
   // 调用 create API
-  const { data } = await axios.post('/api/workflow/create/', createPayload)
-  const wf = data.workflow
+  let wf = null
+  try {
+    const response = await axios.post('/api/workflow/create/', createPayload)
+    wf = response.data.workflow
+    console.log('[前端日志] [INFO] 新建工作流成功 | id:', wf.id, 'name:', wf.name)
+  } catch (error) {
+    if (error.response?.status === 409) {
+      // 已存在同名工作流，提醒用户不能创建
+      console.log('[前端日志] [WARN] 新建工作流失败：同名已存在 | name:', name)
+      ElMessage.error(`不能创建，已存在同名工作流: ${name}`)
+      return  // 直接返回，不创建
+    } else {
+      console.error('[前端日志] [ERROR] 新建工作流失败 | error:', error)
+      throw error
+    }
+  }
   
   if (wf) {
     console.log('[DEBUG] ========== create API 返回的完整数据 ==========')
@@ -1355,36 +1426,70 @@ async function handleCreateWorkflow() {
       }
     }
     
-    // 第二步：调用 update API 添加边连接节点
-    const graphWithEdges = {
-      nodes: existingNodes.length > 0 ? existingNodes : [
-        { id: '1', type: 'input', config: { key: 'input' }, position: { x: 100, y: 200 } },
-        { id: '2', type: 'agent', config: { task: '', model: '' }, position: { x: 400, y: 200 } },
-        { id: '3', type: 'output', config: { format: 'text', template: '{{result}}' }, position: { x: 700, y: 200 } }
-      ],
-      edges: [
-        { id: 'e-1-2', source: '1', target: '2', sourceHandle: 'output', targetHandle: 'input' },
-        { id: 'e-2-3', source: '2', target: '3', sourceHandle: 'output', targetHandle: 'input' }
-      ]
-    }
+    // 第二步：设置节点并前端添加边（像手动连接一样）
+    const nodesToUse = existingNodes.length > 0 ? existingNodes : [
+      { id: '1', type: 'input', config: { key: 'input' }, position: { x: 100, y: 200 } },
+      { id: '2', type: 'agent', config: { task: '', model: '' }, position: { x: 400, y: 200 } },
+      { id: '3', type: 'output', config: { format: 'text', template: '{{result}}' }, position: { x: 700, y: 200 } }
+    ]
+    
+    // 先设置节点
+    nodes.value = nodesToUse.map((node, index) => ({
+      id: String(node.id),
+      type: 'workflow',
+      dragHandle: '.drag-handle',
+      position: node.position || { x: 120 + index * 80, y: 80 + index * 60 },
+      data: {
+        wfType: node.type,
+        config: node.config || {}
+      }
+    }))
+    
+    // 使用 nextTick 延迟添加边，确保节点已渲染
+    await nextTick()
+    
+    // 然后添加边（使用 addEdges，像手动连接一样）
+    const newEdges = [
+      {
+        id: 'e-1-2',
+        source: '1',
+        target: '2',
+        sourceHandle: 'output',
+        targetHandle: 'input',
+        markerEnd: { type: MarkerType.ArrowClosed },
+        style: { stroke: '#ffffff', strokeWidth: 2 }
+      },
+      {
+        id: 'e-2-3',
+        source: '2',
+        target: '3',
+        sourceHandle: 'output',
+        targetHandle: 'input',
+        markerEnd: { type: MarkerType.ArrowClosed },
+        style: { stroke: '#ffffff', strokeWidth: 2 }
+      }
+    ]
+    addEdges(newEdges)
+    
+    // 保存工作流到后端
     await axios.post('/api/workflow/update/', {
       id: wf.id,
       name: wf.name,
-      graph: graphWithEdges
+      graph: {
+        nodes: nodesToUse,
+        edges: [
+          { id: 'e-1-2', source: '1', target: '2', sourceHandle: 'output', targetHandle: 'input' },
+          { id: 'e-2-3', source: '2', target: '3', sourceHandle: 'output', targetHandle: 'input' }
+        ]
+      }
     })
     
-    // 第三步：从服务器获取更新后的工作流数据
-    const { data: refreshData } = await axios.get('/api/workflow/get/', { params: { id: wf.id } })
-    const updatedWf = refreshData.workflow
-    console.log('[DEBUG] get API 返回的 updatedWf.graph:', updatedWf.graph)
-    
-    workflowList.value.unshift({ id: updatedWf.id, name: updatedWf.name, version: updatedWf.version })
-    currentWorkflowId.value = updatedWf.id
-    workflowName.value = updatedWf.name
+    workflowList.value.unshift({ id: wf.id, name: wf.name, version: wf.version })
+    currentWorkflowId.value = wf.id
+    workflowName.value = wf.name
     saveTempWorkflowId('')
-    saveLastWorkflowId(updatedWf.id)
+    saveLastWorkflowId(wf.id)
     clearHistory()
-    decorateGraph(updatedWf.graph)
     syncGraphJson()
     saveHistory(`新建工作流:${name}`, false)
   }
@@ -1392,19 +1497,67 @@ async function handleCreateWorkflow() {
 
 async function handleSelectWorkflow(row) {
   const { data } = await axios.get('/api/workflow/get/', { params: { id: row.id } })
+  console.log('[前端日志] [INFO] 切换工作流 | 收到的数据:', JSON.stringify(data, null, 2))
   const wf = data.workflow
   if (wf) {
     currentWorkflowId.value = wf.id
     workflowName.value = wf.name
-    // 清除临时工作流ID（因为现在选择了正式的工作流）
     saveTempWorkflowId('')
-    // 保存最后打开的工作流ID
     saveLastWorkflowId(wf.id)
-    // 清空历史并重新初始化
+    // 同时更新后端记录
+    await setLastWorkflowIdToBackend(wf.id)
     clearHistory()
-    decorateGraph(wf.graph)
+    
+    // 解析 graph 数据
+    let graphData = wf.graph
+    if (typeof graphData === 'string') {
+      try {
+        graphData = JSON.parse(graphData)
+      } catch (e) {
+        graphData = {}
+      }
+    }
+    
+    const graphNodes = graphData?.nodes || []
+    const graphEdges = graphData?.edges || []
+    
+    // 先清空之前的节点和边，避免残留
+    nodes.value = []
+    edges.value = []
+
+    // 再设置节点
+    nodes.value = graphNodes.map((node, index) => ({
+      id: String(node.id),
+      type: 'workflow',
+      dragHandle: '.drag-handle',
+      position: node.position || { x: 120 + index * 80, y: 80 + index * 60 },
+      data: {
+        wfType: node.type,
+        config: node.config || {}
+      }
+    }))
+
+    // 使用 nextTick 确保节点先渲染完成，然后再添加边
+    await nextTick()
+
+    // 再用 addEdges 添加边
+    console.log('[前端日志] [DEBUG] 切换工作流 | graphEdges:', JSON.stringify(graphEdges))
+    if (graphEdges.length > 0) {
+      const newEdges = graphEdges.map(edge => ({
+        id: edge.id,
+        source: String(edge.source),
+        target: String(edge.target),
+        // 兼容 sourceHandle（驼峰）和 source_handle（下划线）两种格式
+        sourceHandle: edge.sourceHandle || edge.source_handle || undefined,
+        targetHandle: edge.targetHandle || edge.target_handle || undefined,
+        markerEnd: { type: MarkerType.ArrowClosed },
+        style: { stroke: '#ffffff', strokeWidth: 2 }
+      }))
+      console.log('[前端日志] [DEBUG] 切换工作流 | newEdges:', JSON.stringify(newEdges))
+      addEdges(newEdges)
+    }
+
     syncGraphJson()
-    // 保存初始状态但不加入撤销栈
     saveHistory(`加载工作流:${wf.name}`, false)
   }
 }
@@ -1821,8 +1974,20 @@ function onKeyDown(event) {
     return
   }
   
-  // Delete 删除节点
+  // Delete 删除节点或边
   if (event.key === 'Delete') {
+    // 优先删除选中的边
+    if (selectedEdgeId.value) {
+      event.preventDefault()
+      const edgeId = selectedEdgeId.value
+      console.log('[工作流] 删除选中的边:', edgeId)
+      edges.value = edges.value.filter(e => e.id !== edgeId)
+      selectedEdgeId.value = ''
+      syncGraphJson()
+      ElMessage.success('连接已删除')
+      return
+    }
+    // 其次删除选中的节点
     if (selectedNodeId.value) {
       event.preventDefault()
       deleteSelectedNode()
@@ -1933,86 +2098,115 @@ function stopResize() {
 // 恢复临时工作流
 async function restoreTempWorkflow() {
   const savedTempId = localStorage.getItem('temp_workflow_id')
-  console.log('[前端日志] [INFO] 尝试恢复工作流 | savedTempId:', savedTempId)
-  if (savedTempId) {
-    try {
-      console.log('[前端日志] [INFO] 正在获取工作流数据 | id:', savedTempId)
-      const { data } = await axios.get('/api/workflow/get/', { params: { id: savedTempId } })
-      const wf = data.workflow
-      if (wf && wf.is_temp) {
-        currentWorkflowId.value = wf.id
-        workflowName.value = wf.name
-        tempWorkflowId.value = wf.id
-        decorateGraph(wf.graph)
-        syncGraphJson()
-        clearHistory()
-        saveHistory(`恢复临时工作流:${wf.name}`, false)
-        console.log('[前端日志] [INFO] 已恢复临时工作流 | id:', wf.id, 'name:', wf.name)
-        return true
-      } else {
-        // 临时工作流已不存在，清除 localStorage
-        console.log('[前端日志] [WARN] 临时工作流不存在或已不是临时工作流 | id:', savedTempId)
-        saveTempWorkflowId('')
-      }
-    } catch (e) {
-      console.warn('[前端日志] [ERROR] 恢复临时工作流失败:', e)
-      saveTempWorkflowId('')
-    }
-  } else {
+  if (!savedTempId) {
     console.log('[前端日志] [INFO] localStorage 中无 temp_workflow_id，不恢复')
+    return false
   }
-  return false
+
+  console.log('[前端日志] [INFO] 尝试恢复临时工作流 | id:', savedTempId)
+
+  // 先检查后端是否存在该工作流
+  try {
+    const { data } = await axios.get('/api/workflow/get/', { params: { id: savedTempId } })
+    const wf = data.workflow
+    if (!wf) {
+      // 后端没有数据，清除 localStorage
+      console.log('[前端日志] [INFO] 后端无此临时工作流记录，清除 temp_workflow_id | id:', savedTempId)
+      saveTempWorkflowId('')
+      return false
+    }
+    if (!wf.is_temp) {
+      // 已不是临时工作流，清除 localStorage
+      console.log('[前端日志] [INFO] 工作流已不是临时工作流，清除 temp_workflow_id | id:', savedTempId)
+      saveTempWorkflowId('')
+      return false
+    }
+
+    // 恢复临时工作流
+    currentWorkflowId.value = wf.id
+    workflowName.value = wf.name
+    tempWorkflowId.value = wf.id
+    await decorateGraph(wf.graph)
+    syncGraphJson()
+    clearHistory()
+    saveHistory(`恢复临时工作流:${wf.name}`, false)
+    console.log('[前端日志] [INFO] 已恢复临时工作流 | id:', wf.id, 'name:', wf.name)
+    return true
+  } catch (e) {
+    // 404或其他错误，清除 localStorage
+    console.log('[前端日志] [INFO] 恢复临时工作流失败（后端无数据），清除 temp_workflow_id | id:', savedTempId)
+    saveTempWorkflowId('')
+    return false
+  }
 }
 
 // 恢复最后打开的工作流
 async function restoreLastWorkflow() {
   const savedId = localStorage.getItem('last_workflow_id')
-  if (savedId) {
-    try {
-      const { data } = await axios.get('/api/workflow/get/', { params: { id: savedId } })
-      const wf = data.workflow
-      if (wf) {
-        currentWorkflowId.value = wf.id
-        workflowName.value = wf.name
-        // 如果是临时工作流，也更新 tempWorkflowId
-        if (wf.is_temp) {
-          saveTempWorkflowId(wf.id)
-        }
-        clearHistory()
-        decorateGraph(wf.graph)
-        syncGraphJson()
-        saveHistory(`恢复工作流:${wf.name}`, false)
-        console.log('[前端日志] [INFO] 已恢复最后打开的工作流 | id:', wf.id, 'name:', wf.name)
-        return true
-      } else {
-        // 工作流已不存在，清除 localStorage
-        console.log('[前端日志] [WARN] 最后打开的工作流不存在 | id:', savedId)
-        saveLastWorkflowId('')
-      }
-    } catch (e) {
-      console.warn('[前端日志] [ERROR] 恢复最后打开的工作流失败:', e)
-      saveLastWorkflowId('')
-    }
-  } else {
+  if (!savedId) {
     console.log('[前端日志] [INFO] localStorage 中无 last_workflow_id，不恢复')
+    return false
   }
-  return false
+
+  console.log('[前端日志] [INFO] 尝试恢复最后打开的工作流 | id:', savedId)
+
+  // 先检查后端是否存在该工作流
+  try {
+    const { data } = await axios.get('/api/workflow/get/', { params: { id: savedId } })
+    const wf = data.workflow
+    if (!wf) {
+      // 后端没有数据，清除 localStorage
+      console.log('[前端日志] [INFO] 后端无此工作流记录，清除 last_workflow_id | id:', savedId)
+      saveLastWorkflowId('')
+      return false
+    }
+
+    // 恢复工作流
+    currentWorkflowId.value = wf.id
+    workflowName.value = wf.name
+    // 如果是临时工作流，也更新 tempWorkflowId
+    if (wf.is_temp) {
+      saveTempWorkflowId(wf.id)
+    }
+    clearHistory()
+    await decorateGraph(wf.graph)
+    syncGraphJson()
+    saveHistory(`恢复工作流:${wf.name}`, false)
+    console.log('[前端日志] [INFO] 已恢复最后打开的工作流 | id:', wf.id, 'name:', wf.name)
+    return true
+  } catch (e) {
+    // 404或其他错误，清除 localStorage
+    console.log('[前端日志] [INFO] 恢复工作流失败（后端无数据），清除 last_workflow_id | id:', savedId)
+    saveLastWorkflowId('')
+    return false
+  }
 }
 
-// 创建默认临时工作流
+// 创建默认临时工作流（包含自动连接的默认节点）
 async function createDefaultTempWorkflow() {
+  console.log('[前端日志] [INFO] 开始创建默认临时工作流')
+  const timestamp = Date.now()
+  const inputId = 'input-' + timestamp
+  const agentId = 'agent-' + (timestamp + 1)
+  const outputId = 'output-' + (timestamp + 2)
+
   const payload = {
     name: '新工作流',
     graph: {
       nodes: [
-        { id: 'input-' + Date.now(), type: 'input', config: { key: 'input' }, position: { x: 120, y: 80 } },
-        { id: 'agent-' + (Date.now() + 1), type: 'agent', config: { task: '', model: '' }, position: { x: 120, y: 200 } },
-        { id: 'output-' + (Date.now() + 2), type: 'output', config: { format: 'text', template: '{{result}}' }, position: { x: 120, y: 320 } }
+        { id: inputId, type: 'input', config: { key: 'input' }, position: { x: 120, y: 80 } },
+        { id: agentId, type: 'agent', config: { task: '', model: '' }, position: { x: 120, y: 200 } },
+        { id: outputId, type: 'output', config: { format: 'text', template: '{{result}}' }, position: { x: 120, y: 320 } }
       ],
-      edges: []
+      // 自动连接节点：input -> agent -> output
+      edges: [
+        { id: 'edge-' + timestamp, source: inputId, target: agentId, sourceHandle: 'source', targetHandle: 'target' },
+        { id: 'edge-' + (timestamp + 1), source: agentId, target: outputId, sourceHandle: 'source', targetHandle: 'target' }
+      ]
     },
     is_temp: true  // 临时工作流
   }
+  console.log('[前端日志] [INFO] 创建默认工作流数据 | nodes:', payload.graph.nodes.length, 'edges:', payload.graph.edges.length)
   try {
     const { data } = await axios.post('/api/workflow/create/', payload)
     const wf = data.workflow
@@ -2022,10 +2216,10 @@ async function createDefaultTempWorkflow() {
       saveTempWorkflowId(wf.id)
       saveLastWorkflowId(wf.id)
       clearHistory()
-      decorateGraph(wf.graph)
+      await decorateGraph(wf.graph)
       syncGraphJson()
       saveHistory(`创建默认临时工作流:${wf.name}`, false)
-      console.log('[前端日志] [INFO] 已创建默认临时工作流 | id:', wf.id, 'name:', wf.name)
+      console.log('[前端日志] [INFO] 已创建默认临时工作流 | id:', wf.id, 'name:', wf.name, '节点数:', wf.graph?.nodes?.length || 0, '连接数:', wf.graph?.edges?.length || 0)
       return true
     }
   } catch (e) {
@@ -2034,12 +2228,54 @@ async function createDefaultTempWorkflow() {
   return false
 }
 
+// 获取后端存储的上次工作流ID
+async function fetchLastWorkflowIdFromBackend() {
+  try {
+    const { data } = await axios.get('/api/workflow/last/')
+    return data.last_workflow_id
+  } catch (e) {
+    console.warn('[前端日志] [WARN] 获取后端上次工作流ID失败:', e)
+    return null
+  }
+}
+
+// 设置后端存储的上次工作流ID
+async function setLastWorkflowIdToBackend(workflowId) {
+  try {
+    await axios.post('/api/workflow/last/set/', { workflow_id: workflowId })
+  } catch (e) {
+    console.warn('[前端日志] [WARN] 设置后端上次工作流ID失败:', e)
+  }
+}
+
+// 清除后端存储的上次工作流ID
+async function clearLastWorkflowIdFromBackend() {
+  try {
+    await axios.post('/api/workflow/last/clear/')
+  } catch (e) {
+    console.warn('[前端日志] [WARN] 清除后端上次工作流ID失败:', e)
+  }
+}
+
 onMounted(async () => {
+  console.log('[前端日志] [INFO] ========== WorkflowPanel 开始加载 ==========')
   refreshWorkflows()
   loadToolList()
   loadModelList()
 
-  // 优先级：最后打开的工作流 > 临时工作流 > 创建默认临时工作流
+  // 从后端获取上次工作流ID
+  const backendLastId = await fetchLastWorkflowIdFromBackend()
+  // 同时检查本地存储
+  const localLastId = localStorage.getItem('last_workflow_id')
+  const tempWorkflowId = localStorage.getItem('temp_workflow_id')
+  console.log('[前端日志] [INFO] 检查上次工作流记录 | 后端:', backendLastId || '无', '| 本地:', localLastId || '无', '| temp:', tempWorkflowId || '无')
+
+  // 优先使用后端记录，确保持久化
+  if (backendLastId && backendLastId !== localLastId) {
+    localStorage.setItem('last_workflow_id', backendLastId)
+  }
+
+  // 优先级：最后打开的工作流 > 临时工作流 > 空白画布（不自动创建）
   let restored = await restoreLastWorkflow()
 
   // 如果没有恢复最后打开的工作流，尝试恢复临时工作流
@@ -2047,16 +2283,11 @@ onMounted(async () => {
     restored = await restoreTempWorkflow()
   }
 
-  // 如果都没有恢复，创建默认临时工作流
+  // 如果都没有恢复，保持空白画布，让用户自己点击"新建"
   if (!restored) {
-    // 延迟创建，确保 Vue Flow 视口已准备好
-    nextTick(() => {
-      setTimeout(async () => {
-        if (nodes.value.length === 0) {
-          await createDefaultTempWorkflow()
-        }
-      }, 100)
-    })
+    console.log('[前端日志] [INFO] 无历史记录，显示空白画布，等待用户点击新建')
+  } else {
+    console.log('[前端日志] [INFO] ========== WorkflowPanel 加载完成（从记录恢复）==========')
   }
 
   // 添加键盘监听
