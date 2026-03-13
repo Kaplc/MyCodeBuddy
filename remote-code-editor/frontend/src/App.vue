@@ -204,7 +204,7 @@ import FileTree from './components/FileTree.vue'
 import CodeEditor from './components/CodeEditor.vue'
 import AIChat from './components/AIChat.vue'
 import GitPanel from './components/GitPanel.vue'
-import WorkflowPanel from './components/WorkflowPanel.vue'
+import WorkflowPanel from './components/workflow/WorkflowPanel.vue'
 import AppHeader from './components/AppHeader.vue'
 import StatusBar from './components/StatusBar.vue'
 

@@ -157,6 +157,13 @@ def update_workflow(request):
         logger.warning("[Workflow] 缺少 graph")
         return JsonResponse({'error': '缺少 graph'}, status=400)
 
+    # 调试日志：显示 graph 的 nodes 和 edges 数量
+    nodes_count = len(graph.get('nodes', []))
+    edges_count = len(graph.get('edges', []))
+    logger.info(f"[Workflow] 收到 graph | nodes: {nodes_count}, edges: {edges_count}")
+    if edges_count > 0:
+        logger.info(f"[Workflow] edges 内容: {graph.get('edges')}")
+
     ok, err = validate_workflow_graph(graph)
     if not ok:
         logger.warning(f"[Workflow] 图验证失败: {err}")
@@ -201,6 +208,9 @@ def delete_workflow(request):
         workflow = Workflow.objects.get(id=workflow_id)
     except Workflow.DoesNotExist:
         return JsonResponse({'error': '工作流不存在'}, status=404)
+
+    # 记录删除前的日志
+    logger.info(f"[Workflow] 删除工作流 | id: {workflow_id}, name: {workflow.name}")
 
     workflow.delete()
     clear_graph_cache(str(workflow_id))

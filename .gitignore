@@ -42,4 +42,4 @@ remote-code-editor/workspaces/
 workspace_config.json
 remote-code-editor/backend/logs/django.log
 remote-code-editor/backend/.env
-remote-code-editor/backend/logs/django.log
+remote-code-editor/backend/logs
