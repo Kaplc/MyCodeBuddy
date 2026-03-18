@@ -8,6 +8,8 @@ class Workflow(models.Model):
 
     name = models.CharField(max_length=100, verbose_name='名称')
     graph = models.TextField(verbose_name='图定义', blank=True, default='{}')
+    last_result = models.TextField(verbose_name='上次执行结果', blank=True, default='')
+    bubble_records = models.TextField(verbose_name='气泡流记录', blank=True, default='[]')
     version = models.PositiveIntegerField(default=1, verbose_name='版本号')
     is_temp = models.BooleanField(default=False, verbose_name='是否为临时工作流')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
@@ -20,6 +22,38 @@ class Workflow(models.Model):
     def set_graph(self, value):
         """设置图定义（自动序列化）"""
         self.graph = json.dumps(value, ensure_ascii=False)
+
+    def get_last_result(self):
+        """获取上次执行结果（自动反序列化）"""
+        if not self.last_result:
+            return None
+        try:
+            return json.loads(self.last_result)
+        except json.JSONDecodeError:
+            return None
+
+    def set_last_result(self, value):
+        """设置执行结果（自动序列化）"""
+        self.last_result = json.dumps(value, ensure_ascii=False)
+
+    def get_bubble_records(self):
+        """获取气泡流记录（自动反序列化）"""
+        if not self.bubble_records:
+            return []
+        try:
+            return json.loads(self.bubble_records)
+        except json.JSONDecodeError:
+            return []
+
+    def set_bubble_records(self, value):
+        """设置气泡流记录（自动序列化）"""
+        self.bubble_records = json.dumps(value, ensure_ascii=False)
+
+    def add_bubble_record(self, record):
+        """添加单条气泡记录"""
+        records = self.get_bubble_records()
+        records.append(record)
+        self.set_bubble_records(records)
 
     class Meta:
         db_table = 'ai_workflow'

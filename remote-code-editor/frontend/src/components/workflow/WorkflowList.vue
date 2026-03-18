@@ -191,7 +191,8 @@ async function handleSelectWorkflow(row) {
     emit('select', {
       id: wf.id,
       name: wf.name,
-      graph: graphData
+      graph: graphData,
+      last_result: wf.last_result || null
     })
 
     // 刷新列表以更新高亮状态
@@ -369,7 +370,7 @@ async function restoreTempWorkflow() {
     }
 
     console.log('[前端日志] [INFO] 已恢复临时工作流 | id:', wf.id, 'name:', wf.name)
-    return { type: 'temp', data: { id: wf.id, name: wf.name, graph: graphData } }
+    return { type: 'temp', data: { id: wf.id, name: wf.name, graph: graphData, last_result: wf.last_result || null } }
   } catch (e) {
     // 404或其他错误，清除 localStorage
     console.log('[前端日志] [INFO] 恢复临时工作流失败（后端无数据），清除 temp_workflow_id | id:', savedTempId)
@@ -415,7 +416,7 @@ async function restoreLastWorkflow() {
     }
 
     console.log('[前端日志] [INFO] 已恢复最后打开的工作流 | id:', wf.id, 'name:', wf.name)
-    return { type: 'last', data: { id: wf.id, name: wf.name, graph: graphData } }
+    return { type: 'last', data: { id: wf.id, name: wf.name, graph: graphData, last_result: wf.last_result || null } }
   } catch (e) {
     // 404或其他错误，清除 localStorage
     console.log('[前端日志] [INFO] 恢复工作流失败（后端无数据），清除 last_workflow_id | id:', savedId)

@@ -77,7 +77,7 @@
 
       <!-- 工作流编辑器 -->
       <section v-if="showWorkflowPanel" class="workflow-section" :style="{ flex: editorFlex }">
-        <WorkflowPanel @close="handleWorkflowClose" />
+        <WorkflowPanel @close="handleWorkflowClose" @workflow-completed="handleWorkflowCompleted" />
       </section>
 
       
@@ -370,6 +370,23 @@ function toggleWorkflowPanel() {
 function handleWorkflowClose() {
   showWorkflowPanel.value = false
   showCodeEditor.value = true
+}
+
+// 工作流执行完成后刷新文件树
+async function handleWorkflowCompleted() {
+  console.log('[前端日志] [INFO] 工作流执行完成，刷新文件树')
+  sendFrontendLog('info', '工作流执行完成，刷新文件树')
+  
+  // 刷新文件树
+  if (fileTreeRef.value && fileTreeRef.value.loadTree) {
+    try {
+      await fileTreeRef.value.loadTree()
+      console.log('[前端日志] [INFO] 文件树刷新成功')
+    } catch (error) {
+      console.error('[前端日志] [ERROR] 文件树刷新失败:', error)
+      sendFrontendLog('error', `文件树刷新失败: ${error.message || error}`)
+    }
+  }
 }
 
 

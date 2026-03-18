@@ -522,7 +522,8 @@ function handleWebSocketMessage(data) {
         reasoningContent: streamingReasoning.value,
         hasReasoning: !!streamingReasoning.value,
         toolExecutions: toolExecutions.value.length > 0 ? [...toolExecutions.value] : null,
-        timestamp: new Date()
+        timestamp: new Date(),
+        elapsedTime: data.elapsed_time // 保存耗时信息
       })
     }
     // 重置状态

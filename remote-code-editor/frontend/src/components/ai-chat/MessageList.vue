@@ -19,6 +19,7 @@
       <div class="message-header">
         <span class="role-name">{{ msg.role === 'user' ? '你' : modelName }}</span>
         <span class="time">{{ formatTime(msg.timestamp) }}</span>
+        <span v-if="msg.elapsedTime" class="elapsed-time">{{ msg.elapsedTime }}s</span>
       </div>
       <div class="message-content">
         <!-- 解析消息内容，分离思考过程和回答 -->
@@ -594,6 +595,12 @@ async function handleCopy(content) {
   margin-left: 40px;
 }
 
+.message.assistant {
+  background: #2d2d2d;
+  margin-right: 40px;
+  border: 1px solid #3a3a3a;
+}
+
 .message-header {
   display: flex;
   justify-content: space-between;
@@ -606,6 +613,12 @@ async function handleCopy(content) {
 .role-name {
   font-weight: 500;
   color: #aaa;
+}
+
+.elapsed-time {
+  color: #666;
+  font-size: 11px;
+  margin-left: 8px;
 }
 
 .message-content {

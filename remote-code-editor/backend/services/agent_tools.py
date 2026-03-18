@@ -496,23 +496,50 @@ class AgentToolExecutor:
     
     async def _write_file(self, path: str, content: str) -> Dict[str, Any]:
         """写入文件"""
+        import logging
+        logger = logging.getLogger('workflow')
+        
         try:
+            # 检查工作区是否设置
+            if not self.workspace:
+                error_msg = "工作区未设置，无法创建文件。请先设置工作区路径。"
+                logger.error(f"[Agent Tool] write_file失败: {error_msg}")
+                return {"success": False, "error": error_msg, "hint": "请在工作流中设置workspace参数"}
+            
             file_path = self._resolve_path(path)
+            logger.info(f"[Agent Tool] write_file | 相对路径: {path}, 绝对路径: {file_path}")
             
             # 确保父目录存在
             file_path.parent.mkdir(parents=True, exist_ok=True)
+            logger.info(f"[Agent Tool] 父目录已创建/确认: {file_path.parent}")
             
             # 写入文件
             file_path.write_text(content, encoding='utf-8')
+            logger.info(f"[Agent Tool] 文件写入成功 | 路径: {file_path}, 大小: {len(content)}字节")
+            
+            # 验证文件确实被创建
+            if not file_path.exists():
+                error_msg = f"文件写入后验证失败: {file_path}"
+                logger.error(f"[Agent Tool] {error_msg}")
+                return {"success": False, "error": error_msg}
             
             return {
                 "success": True,
                 "path": path,
-                "message": f"文件已保存: {path}",
+                "absolute_path": str(file_path),
+                "workspace": str(self.workspace),
+                "message": f"文件已保存到工作区: {path}",
                 "size": len(content)
             }
+        except ValueError as e:
+            # _resolve_path抛出的错误（如工作区未设置、路径越界）
+            error_msg = str(e)
+            logger.error(f"[Agent Tool] write_file路径错误: {error_msg}")
+            return {"success": False, "error": error_msg, "hint": "请确保工作区已正确设置"}
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            error_msg = f"文件写入失败: {str(e)}"
+            logger.error(f"[Agent Tool] write_file异常: {error_msg}")
+            return {"success": False, "error": error_msg}
     
     async def _list_directory(self, path: str) -> Dict[str, Any]:
         """列出目录"""

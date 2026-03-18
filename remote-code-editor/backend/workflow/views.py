@@ -119,13 +119,20 @@ def get_workflow(request):
 
     # 将 graph 解析为 Python 对象再序列化，确保返回标准 JSON
     graph_data = workflow.get_graph()
-    return JsonResponse({'workflow': {
+    last_result = workflow.get_last_result()
+    
+    response_data = {
         'id': str(workflow.id),
         'name': workflow.name,
         'version': workflow.version,
         'graph': graph_data,
         'updated_at': workflow.updated_at.isoformat(),
-    }})
+        'bubble_records': workflow.get_bubble_records(),
+    }
+    if last_result:
+        response_data['last_result'] = last_result
+    
+    return JsonResponse({'workflow': response_data})
 
 
 @csrf_exempt
@@ -257,9 +264,14 @@ def run_workflow(request):
     import time
     start_time = time.time()
 
+    logger.info("=" * 60)
+    logger.info("[Workflow API] 收到工作流执行请求")
+    logger.info("=" * 60)
+
     try:
         payload = json.loads(request.body or '{}')
     except json.JSONDecodeError:
+        logger.error(f"[Workflow API] JSON解析失败 | body: {request.body}")
         return JsonResponse({'error': '无效的JSON数据', 'success': False}, status=400)
 
     workflow_id = payload.get('workflow_id')
@@ -268,14 +280,25 @@ def run_workflow(request):
     workspace = payload.get('workspace', '')
     execution_context = payload.get('execution_context', {})
 
+    logger.info(f"[Workflow API] 请求参数 | workflow_id={workflow_id}, workspace={workspace}, input_type={type(input_data).__name__}, has_graph={graph is not None}")
+
     if not workflow_id and not graph:
+        logger.warning("[Workflow API] 缺少 workflow_id 或 graph")
         return JsonResponse({'error': '缺少 workflow_id 或 graph', 'success': False}, status=400)
 
+    # 清理旧的气泡记录
+    from .cache import clear_bubble_records, clear_execution_state
+    if workflow_id:
+        clear_bubble_records(str(workflow_id))
+        clear_execution_state(str(workflow_id))
+        logger.info(f"[Workflow API] 已清理旧的气泡记录 | workflow_id={workflow_id}")
+
     # 记录执行请求
-    logger.info(f"[Workflow] 执行工作流: workflow_id={workflow_id}, workspace={workspace}, input_type={type(input_data).__name__}")
+    logger.info(f"[Workflow API] 开始执行工作流")
 
     try:
         if workflow_id:
+            logger.info(f"[Workflow API] 使用 workflow_id 模式执行")
             result = run_workflow_by_id(str(workflow_id), input_data, workspace)
             # 获取图信息
             from .models import Workflow
@@ -285,8 +308,10 @@ def run_workflow(request):
             except:
                 graph_info = {}
         else:
+            logger.info(f"[Workflow API] 使用 graph 直接执行")
             ok, err = validate_workflow_graph(graph)
             if not ok:
+                logger.warning(f"[Workflow API] 图验证失败: {err}")
                 return JsonResponse({'error': err, 'success': False}, status=400)
             result = run_workflow_by_graph(graph, input_data, workspace)
             graph_info = graph
@@ -300,7 +325,8 @@ def run_workflow(request):
 
         response = {
             'success': True,
-            'result': result,
+            'result': result.get('result', result) if isinstance(result, dict) else result,
+            'iterations': result.get('iterations', []) if isinstance(result, dict) else [],
             'execution_info': {
                 'version': graph_info.get('version', '1.0'),
                 'node_count': node_count,
@@ -311,13 +337,33 @@ def run_workflow(request):
             }
         }
 
-        logger.info(f"[Workflow] 执行完成: nodes={node_count}, edges={edge_count}, time={execution_time}ms")
+        # 保存执行结果到工作流
+        if workflow_id:
+            try:
+                wf = Workflow.objects.get(id=workflow_id)
+                wf.set_last_result(response)
+                # 清空旧的气泡记录，只保存当前运行的气泡记录
+                bubble_records = result.get('bubble_records', []) if isinstance(result, dict) else []
+                wf.set_bubble_records(bubble_records)
+                if bubble_records:
+                    logger.info(f"[Workflow API] 气泡记录已保存 | workflow_id={workflow_id}, count={len(bubble_records)}")
+                wf.save(update_fields=['last_result', 'bubble_records', 'updated_at'])
+                logger.info(f"[Workflow API] 执行结果已保存 | workflow_id={workflow_id}")
+            except Exception as e:
+                logger.warning(f"[Workflow API] 保存结果失败: {e}")
+
+        logger.info("=" * 60)
+        logger.info(f"[Workflow API] 执行成功 | nodes={node_count}, edges={edge_count}, time={execution_time}ms")
+        logger.info("=" * 60)
         return JsonResponse(response)
     except Exception as e:
         import traceback
         error_msg = str(e)
         error_trace = traceback.format_exc()
-        logger.error(f"[Workflow] 执行失败: {error_msg}\n{error_trace}")
+        logger.error("=" * 60)
+        logger.error(f"[Workflow API] 执行失败: {error_msg}")
+        logger.error(f"[Workflow API] 错误堆栈: {error_trace}")
+        logger.error("=" * 60)
         return JsonResponse({
             'error': error_msg,
             'success': False,
@@ -439,8 +485,63 @@ def debug_log(request):
         payload = json.loads(request.body or '{}')
     except json.JSONDecodeError:
         return JsonResponse({'error': '无效的JSON数据'}, status=400)
-    
+
     message = payload.get('message', '')
     logger.info(f"[DEBUG-FRONTEND] {message}")
     logger.info(f"[DEBUG-FRONTEND] payload: {payload}")
     return JsonResponse({'success': True})
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_execution_state(request):
+    """获取工作流执行状态（当前执行的节点）"""
+    workflow_id = request.GET.get('workflow_id')
+
+    logger.info(f"[Execution API] 收到状态查询请求 | workflow_id={workflow_id}")
+
+    if not workflow_id:
+        logger.warning(f"[Execution API] 缺少 workflow_id 参数")
+        return JsonResponse({'error': '缺少 workflow_id'}, status=400)
+
+    from .cache import get_execution_state, get_bubble_records
+    state = get_execution_state(workflow_id)
+    bubble_records = get_bubble_records(workflow_id)
+
+    response_data = {
+        'workflow_id': workflow_id,
+        'node_id': state.get('node_id'),
+        'status': state.get('status', 'idle'),
+        'details': state.get('details', {}),  # 包含执行详情（迭代次数、AI状态、当前工具等）
+        'bubble_records': bubble_records  # 气泡记录
+    }
+
+    logger.info(f"[Execution API] 返回执行状态 | workflow_id={workflow_id}, node_id={state.get('node_id')}, status={state.get('status', 'idle')}, details={state.get('details', {})}")
+
+    return JsonResponse(response_data)
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def clear_execution_state_api(request):
+    """清除工作流执行状态"""
+    import json
+    try:
+        data = json.loads(request.body) if request.body else {}
+    except json.JSONDecodeError:
+        data = {}
+    
+    workflow_id = data.get('workflow_id')
+    
+    logger.info(f"[Execution API] 收到清除状态请求 | workflow_id={workflow_id}")
+    
+    if not workflow_id:
+        logger.warning(f"[Execution API] 清除状态缺少 workflow_id 参数")
+        return JsonResponse({'error': '缺少 workflow_id'}, status=400)
+    
+    from .cache import clear_execution_state
+    clear_execution_state(workflow_id)
+    
+    logger.info(f"[Execution API] 执行状态已清除 | workflow_id={workflow_id}")
+    
+    return JsonResponse({'success': True, 'message': f'工作流 {workflow_id} 执行状态已清除'})

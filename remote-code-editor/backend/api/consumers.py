@@ -164,6 +164,9 @@ class AIChatConsumer(AsyncWebsocketConsumer):
     
     async def handle_chat(self, data):
         """处理对话请求"""
+        import time
+        start_time = time.time()  # 记录开始时间
+        
         messages = data.get('messages', [])
         thinking_mode = data.get('thinking_mode', False)
         model = data.get('model', 'glm-4-flash')
@@ -263,8 +266,12 @@ class AIChatConsumer(AsyncWebsocketConsumer):
                         reasoning=full_reasoning
                     )
                 
-                # 发送完成信号
-                await self.send(json.dumps({'type': 'done'}))
+                # 发送完成信号（包含耗时）
+                elapsed_time = round(time.time() - start_time, 2)
+                await self.send(json.dumps({
+                    'type': 'done',
+                    'elapsed_time': elapsed_time
+                }))
             
         except Exception as e:
             await self.send(json.dumps({
@@ -283,6 +290,9 @@ class AIChatConsumer(AsyncWebsocketConsumer):
                 - 'agent': 可以使用所有工具（包括写文件）
                 - 'ask': 只能使用只读工具（read_file, list_directory, search_content）
         """
+        import time
+        start_time = time.time()  # 记录开始时间
+        
         # 根据模式获取可用的工具
         tools = get_tools_definition(mode)
         current_messages = messages.copy()
@@ -337,7 +347,12 @@ class AIChatConsumer(AsyncWebsocketConsumer):
                             'assistant',
                             content_buffer
                         )
-                    await self.send(json.dumps({'type': 'done'}))
+                    # 发送完成信号（包含耗时）
+                    elapsed_time = round(time.time() - start_time, 2)
+                    await self.send(json.dumps({
+                        'type': 'done',
+                        'elapsed_time': elapsed_time
+                    }))
                     return
                 
                 elif chunk_type == 'error':
@@ -417,7 +432,12 @@ class AIChatConsumer(AsyncWebsocketConsumer):
                         'assistant',
                         content_buffer
                     )
-                await self.send(json.dumps({'type': 'done'}))
+                # 发送完成信号（包含耗时）
+                elapsed_time = round(time.time() - start_time, 2)
+                await self.send(json.dumps({
+                    'type': 'done',
+                    'elapsed_time': elapsed_time
+                }))
                 return
         
         # 达到最大迭代次数
@@ -425,4 +445,9 @@ class AIChatConsumer(AsyncWebsocketConsumer):
             'type': 'warning',
             'message': f'Agent 达到最大迭代次数 ({self.MAX_AGENT_ITERATIONS})，已停止执行'
         }))
-        await self.send(json.dumps({'type': 'done'}))
+        # 发送完成信号（包含耗时）
+        elapsed_time = round(time.time() - start_time, 2)
+        await self.send(json.dumps({
+            'type': 'done',
+            'elapsed_time': elapsed_time
+        }))

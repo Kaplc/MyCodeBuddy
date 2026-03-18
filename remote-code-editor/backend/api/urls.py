@@ -68,6 +68,9 @@ urlpatterns = [
     path('workflow/models/', views.list_models, name='workflow_models'),  # 来自 workflow.views
     path('workflow/reload-config/', views.reload_ai_config, name='workflow_reload_config'),
     path('workflow/debug-log/', workflow_views.debug_log, name='workflow_debug_log'),
+    # 工作流执行状态API
+    path('workflow/execution-state/', workflow_views.get_execution_state, name='workflow_execution_state'),
+    path('workflow/execution-state/clear/', workflow_views.clear_execution_state_api, name='workflow_execution_state_clear'),
     # 工作流状态API
     path('workflow/last/', workflow_views.get_last_workflow, name='workflow_last_get'),
     path('workflow/last/set/', workflow_views.set_last_workflow, name='workflow_last_set'),

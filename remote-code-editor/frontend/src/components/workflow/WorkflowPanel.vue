@@ -21,9 +21,11 @@
         @clear-canvas="clearWorkflowCanvas"
       />
 
-      <section class="workflow-editor">
-        <div class="section-title">可视化编辑器</div>
-        <div class="editor-layout">
+      <!-- 中间画布和右侧运行窗口的可调整容器 -->
+      <div class="editor-run-container">
+        <section class="workflow-editor" :style="{ width: editorWidth + 'px' }">
+          <div class="section-title">可视化编辑器</div>
+          <div class="editor-layout">
           <aside class="node-palette">
             <div class="palette-title">节点库（拖拽到画布）</div>
             <div
@@ -239,13 +241,18 @@
         </div>
       </section>
 
+      <!-- 垂直分隔条 - 调整画布和运行窗口宽度 -->
+      <div class="vertical-resizer" @mousedown="startVerticalResize"></div>
+
       <WorkflowRun
         ref="workflowRunRef"
         :edges="edges"
         :current-workflow-id="currentWorkflowId"
         :graph-json="graphJson"
         @run="onWorkflowRun"
+        @bubble-complete="onBubbleComplete"
       />
+      </div>
     </div>
   </div>
 </template>
@@ -268,7 +275,7 @@ import '@vue-flow/controls/dist/style.css'
 import '@vue-flow/minimap/dist/style.css'
 import 'highlight.js/styles/tokyo-night-dark.css'
 
-const emit = defineEmits(['close'])
+const emit = defineEmits(['close', 'workflow-completed'])
 
 // 工作流列表组件引用
 const workflowListRef = ref(null)
@@ -278,6 +285,16 @@ const workflowRunRef = ref(null)
 const workflowList = ref([])
 const currentWorkflowId = ref('')
 const workflowName = ref('')
+
+// 执行状态轮询相关
+let executionPollingTimer = null
+const POLLING_INTERVAL = 5000 // 5秒 轮询间隔
+const currentExecutingNodeId = ref(null) // 当前正在执行的节点ID
+const displayedBubbleCount = ref(0) // 已显示的气泡数量计数器
+
+// 气泡队列相关 - 实现逐个显示（事件驱动）
+let bubbleQueue = [] // 待显示的气泡队列
+let isBubbleTypewriting = false // 当前气泡是否正在打字
 
 const graphJson = ref('')
 
@@ -332,6 +349,220 @@ function onWorkflowSelect(data) {
   clearHistory()
   syncGraphJson()
   saveHistory(`加载工作流:${data.name}`, false)
+  
+  // 显示上次执行结果和历史气泡记录
+  if (workflowRunRef.value) {
+    // 设置历史气泡记录（气泡中已包含结论，无需再设置resultHtml）
+    if (data.bubble_records && data.bubble_records.length > 0) {
+      workflowRunRef.value.setBubbleRecords(data.bubble_records)
+    }
+    
+    // 设置迭代历史（用于紧凑显示）
+    if (data.last_result && data.last_result.iterations) {
+      workflowRunRef.value.setIterations(data.last_result.iterations)
+    }
+    
+    // 设置执行时间（如果有）
+    if (data.last_result && data.last_result.execution_info?.execution_time_ms) {
+      workflowRunRef.value.setExecutionTime(
+        `${(data.last_result.execution_info.execution_time_ms / 1000).toFixed(2)}s`
+      )
+    }
+  }
+}
+
+// 开始轮询执行状态
+function startExecutionPolling(workflowId) {
+  // 清除之前的轮询
+  stopExecutionPolling()
+  
+  console.log('='.repeat(60))
+  console.log('[工作流执行] 开始轮询执行状态')
+  console.log('='.repeat(60))
+  console.log('[工作流执行]    workflow_id:', workflowId)
+  console.log('[工作流执行]    轮询间隔:', POLLING_INTERVAL, 'ms')
+  
+  // 立即查询一次
+  pollExecutionState(workflowId)
+  
+  // 设置定时轮询
+  executionPollingTimer = setInterval(() => {
+    pollExecutionState(workflowId)
+  }, POLLING_INTERVAL)
+  
+  console.log('[工作流执行] 轮询定时器已启动 | timer_id:', executionPollingTimer)
+}
+
+// 停止轮询执行状态
+async function stopExecutionPolling() {
+  if (executionPollingTimer) {
+    clearInterval(executionPollingTimer)
+    console.log('='.repeat(60))
+    console.log('[工作流执行] 停止轮询执行状态')
+    console.log('='.repeat(60))
+    console.log('[工作流执行]    已清除定时器 | timer_id:', executionPollingTimer)
+    executionPollingTimer = null
+  }
+  
+  // 清除节点高亮
+  clearExecutionHighlight()
+  
+  // 注意：不再主动清除后端执行状态，让后端在工作流完成时自行清除
+  // 避免在执行过程中被前端意外中断
+}
+
+// 轮询执行状态
+async function pollExecutionState(workflowId) {
+  if (!workflowId) {
+    console.warn('[工作流执行] ⚠️  workflow_id 为空，跳过轮询')
+    return
+  }
+  
+  try {
+    const startTime = Date.now()
+    const { data } = await axios.get('/api/workflow/execution-state/', {
+      params: { workflow_id: workflowId }
+    })
+    const requestTime = Date.now() - startTime
+    
+    console.log('[工作流执行] 收到执行状态响应 | request_time=' + requestTime + 'ms')
+    console.log('[工作流执行]    data=', data)
+    
+    if (data && data.node_id) {
+      // 每次收到消息都确保节点高亮（即使节点ID没变）
+      const isNodeChanged = currentExecutingNodeId.value !== data.node_id
+      
+      if (isNodeChanged) {
+        console.log('-'.repeat(60))
+        console.log('[工作流执行] 检测到节点变化')
+        console.log('[工作流执行]    前一个节点:', currentExecutingNodeId.value || '无')
+        console.log('[工作流执行]    当前节点:', data.node_id)
+        console.log('[工作流执行]    状态:', data.status)
+        console.log('[工作流执行]    详情:', data.details || {})
+        console.log('[工作流执行]    请求耗时:', requestTime, 'ms')
+        console.log('-'.repeat(60))
+      }
+      
+      // 每次都更新当前节点并高亮
+      currentExecutingNodeId.value = data.node_id
+      highlightExecutingNode(data.node_id)
+      
+      // 更新 WorkflowRun 组件的当前节点显示
+      if (workflowRunRef.value) {
+        workflowRunRef.value.setCurrentNode(data.node_id)
+      }
+      
+      // 更新执行详情（每次都更新）
+      if (workflowRunRef.value && data.details) {
+        console.log('[工作流执行] 更新执行详情 | details=', data.details)
+        workflowRunRef.value.setExecutionDetails(data.details)
+      }
+      
+      // 处理气泡记录 - 放入队列逐条显示
+      if (workflowRunRef.value && data.bubble_records && data.bubble_records.length > 0) {
+        const newCount = data.bubble_records.length
+        const existingCount = displayedBubbleCount.value
+
+        if (newCount > existingCount) {
+          // 将新气泡放入队列
+          const newBubbles = data.bubble_records.slice(existingCount)
+          console.log('[工作流执行] 新气泡入队 | 新增=', newBubbles.length, ', 已有=', existingCount)
+
+          // 加入队列
+          bubbleQueue.push(...newBubbles)
+          displayedBubbleCount.value = newCount
+
+          // 如果当前没有气泡在打字，立即显示下一个
+          processNextBubble()
+        }
+      }
+    } else {
+      // 没有正在执行的节点 - 执行完成
+      if (currentExecutingNodeId.value !== null) {
+        console.log('[工作流执行] 执行完成')
+        currentExecutingNodeId.value = null
+        clearExecutionHighlight()
+        // 重置气泡计数器，准备下次执行
+        displayedBubbleCount.value = 0
+        // 清空气泡队列
+        clearBubbleQueue()
+      }
+    }
+  } catch (error) {
+    console.error('[工作流执行] 轮询执行状态失败:')
+    console.error('[工作流执行]    错误:', error.message)
+    console.error('[工作流执行]    详情:', error.response?.data || error)
+  }
+}
+
+// 高亮正在执行的节点（使用 CSS 动画）
+function highlightExecutingNode(nodeId) {
+  if (!nodeId) {
+    console.warn('[工作流执行] nodeId 为空，跳过高亮')
+    return
+  }
+
+  console.log('[工作流执行] 开始高亮节点 | node_id:', nodeId)
+
+  // 设置高亮类，CSS 动画会自动生效
+  nodes.value = nodes.value.map(n => {
+    const isExecuting = String(n.id) === String(nodeId)
+
+    if (isExecuting) {
+      console.log('[工作流执行] 找到目标节点 | id:', n.id)
+    }
+
+    return {
+      ...n,
+      class: isExecuting ? 'node-executing' : ''
+    }
+  })
+
+  console.log('[工作流执行] 节点高亮完成')
+}
+
+// 清除执行高亮
+function clearExecutionHighlight() {
+  console.log('[工作流执行] 清除所有节点高亮')
+
+  // 清除节点 class
+  nodes.value = nodes.value.map(n => ({
+    ...n,
+    class: ''
+  }))
+  currentExecutingNodeId.value = null
+
+  console.log('[工作流执行] 高亮已清除')
+}
+
+// 处理下一个气泡（事件驱动）
+function processNextBubble() {
+  // 如果正在打字或队列为空，不处理
+  if (isBubbleTypewriting || bubbleQueue.length === 0) {
+    return
+  }
+
+  // 从队列中取出第一个气泡
+  const bubble = bubbleQueue.shift()
+  if (workflowRunRef.value && bubble) {
+    isBubbleTypewriting = true
+    workflowRunRef.value.addBubbleRecord(bubble)
+    console.log('[工作流执行] 显示气泡 | 剩余=', bubbleQueue.length)
+  }
+}
+
+// 气泡打字机效果完成回调
+function onBubbleComplete() {
+  console.log('[工作流执行] 气泡打字完成')
+  isBubbleTypewriting = false
+  // 继续处理下一个气泡
+  processNextBubble()
+}
+
+// 清空气泡队列
+function clearBubbleQueue() {
+  bubbleQueue = []
+  isBubbleTypewriting = false
 }
 
 function onWorkflowCreate(data) {
@@ -797,9 +1028,8 @@ const currentSelectedNodeId = ref(null)
 // 多选节点集合
 const multiSelectedNodeIds = ref(new Set())
 
-function onNodeClick(event) {
-  console.log('[工作流] 点击节点:', event.node, 'Ctrl键:', event.ctrlKey || event.metaKey)
-  const node = event.node
+function onNodeClick({ event, node }) {
+  console.log('[工作流] 点击节点:', node, 'Ctrl键:', event.ctrlKey || event.metaKey)
   if (!node) return
 
   const isMultiSelect = event.ctrlKey || event.metaKey // Ctrl或Command键
@@ -1322,8 +1552,17 @@ async function applyGraphJson() {
 // 格式化消息内容（带代码高亮）
 // 处理工作流运行事件
 async function onWorkflowRun(event) {
+  console.log('='.repeat(80))
+  console.log('[工作流运行] 开始执行工作流')
+  console.log('='.repeat(80))
+  
   const { input, buildGraph } = event
   const graph = buildGraph()
+
+  console.log('[工作流运行]    输入:', input)
+  console.log('[工作流运行]    图节点数:', graph.nodes?.length)
+  console.log('[工作流运行]    图边数:', graph.edges?.length)
+  console.log('[工作流运行]    当前工作流ID:', currentWorkflowId.value || '临时工作流')
 
   const payload = currentWorkflowId.value
     ? { workflow_id: currentWorkflowId.value, input }
@@ -1332,40 +1571,79 @@ async function onWorkflowRun(event) {
         input
       }
 
+  console.log('[工作流运行]    请求模式:', currentWorkflowId.value ? '使用已保存的工作流' : '使用临时图数据')
+
   // 设置运行状态
   if (workflowRunRef.value) {
     workflowRunRef.value.setRunning(true)
+    console.log('[工作流运行] 运行状态已设置')
   }
 
+  // 启动执行状态轮询
+  const workflowIdToPoll = currentWorkflowId.value || 'temp'
+  console.log('[工作流运行] 启动状态轮询 | workflow_id:', workflowIdToPoll)
+  startExecutionPolling(workflowIdToPoll)
+
   try {
+    console.log('[工作流运行] 发送执行请求到后端...')
+    const startTime = Date.now()
     const { data } = await axios.post('/api/workflow/run/', payload)
+    const requestTime = Date.now() - startTime
+    
+    console.log('[工作流运行] 收到后端响应 | 耗时:', requestTime, 'ms')
+    
     if (data.success && data.result) {
       // 格式化结果
+      console.log('[工作流运行] 执行成功')
+      console.log('[工作流运行]    执行时间:', data.execution_info?.execution_time_ms, 'ms')
+      console.log('[工作流运行]    节点数:', data.execution_info?.node_count)
+      console.log('[工作流运行]    边数:', data.execution_info?.edge_count)
+      
       if (workflowRunRef.value) {
         workflowRunRef.value.formatAndSetResult(
           data.result,
-          data.execution_info?.execution_time_ms
+          data.execution_info?.execution_time_ms,
+          data.iterations || []
         )
       }
       ElMessage.success('工作流执行成功')
+      
+      // 工作流执行成功后，通知父组件刷新文件树
+      emit('workflow-completed')
     } else if (data.error) {
+      console.error('[工作流运行] 执行失败 | error:', data.error)
       if (workflowRunRef.value) {
         workflowRunRef.value.setError(data.error)
       }
       ElMessage.error('执行失败: ' + data.error)
     }
   } catch (error) {
-    console.error('工作流执行失败:', error)
+    console.error('='.repeat(80))
+    console.error('[工作流运行] 请求异常')
+    console.error('='.repeat(80))
+    console.error('[工作流运行]    错误:', error.message)
+    console.error('[工作流运行]    响应:', error.response?.data)
+    console.error('[工作流运行]    堆栈:', error.stack)
+    
     const errorMsg = error.response?.data?.error || error.message || '未知错误'
     if (workflowRunRef.value) {
       workflowRunRef.value.setError('执行失败: ' + errorMsg)
     }
     ElMessage.error('工作流执行失败: ' + errorMsg)
   } finally {
+    // 停止执行状态轮询
+    console.log('[工作流运行] 停止状态轮询')
+    stopExecutionPolling()
+    
     // 运行结束
     if (workflowRunRef.value) {
       workflowRunRef.value.setRunning(false)
+      console.log('[工作流运行] 运行状态已清除')
     }
+    
+    console.log('='.repeat(80))
+    console.log('[工作流运行] 工作流执行流程结束')
+    console.log('='.repeat(80))
   }
 }
 
@@ -1777,6 +2055,13 @@ const isResizing = ref(false)
 const startY = ref(0)
 const startHeight = ref(0)
 
+// 编辑器和运行窗口宽度调整
+const editorWidth = ref(1200) // 默认编辑器宽度
+const runPanelWidth = ref(400) // 默认运行窗口宽度
+const isVerticalResizing = ref(false)
+const startResizeX = ref(0)
+const startEditorWidth = ref(0)
+
 function startResize(event) {
   isResizing.value = true
   startY.value = event.clientY
@@ -1801,6 +2086,31 @@ function stopResize() {
   }
 }
 
+// 垂直分隔条拖拽 - 调整编辑器和运行窗口宽度
+function startVerticalResize(event) {
+  isVerticalResizing.value = true
+  startResizeX.value = event.clientX
+  startEditorWidth.value = editorWidth.value
+  document.body.style.cursor = 'ew-resize'
+  document.body.style.userSelect = 'none'
+}
+
+function handleVerticalResize(event) {
+  if (!isVerticalResizing.value) return
+
+  const deltaX = event.clientX - startResizeX.value
+  const newWidth = Math.max(400, Math.min(1200, startEditorWidth.value + deltaX))
+  editorWidth.value = newWidth
+}
+
+function stopVerticalResize() {
+  if (isVerticalResizing.value) {
+    isVerticalResizing.value = false
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+  }
+}
+
 onMounted(async () => {
   console.log('[前端日志] [INFO] ========== WorkflowPanel 开始加载 ==========')
   loadToolList()
@@ -1819,6 +2129,27 @@ onMounted(async () => {
         clearHistory()
         syncGraphJson()
         saveHistory(`加载工作流:${data.name}`, false)
+        
+        // 显示上次执行结果和历史气泡记录
+        if (workflowRunRef.value) {
+          // 设置历史气泡记录（气泡中已包含结论，无需再设置resultHtml）
+          if (data.bubble_records && data.bubble_records.length > 0) {
+            workflowRunRef.value.setBubbleRecords(data.bubble_records)
+          }
+          
+          // 设置迭代历史（用于紧凑显示）
+          if (data.last_result && data.last_result.iterations) {
+            workflowRunRef.value.setIterations(data.last_result.iterations)
+          }
+          
+          // 设置执行时间（如果有）
+          if (data.last_result && data.last_result.execution_info?.execution_time_ms) {
+            workflowRunRef.value.setExecutionTime(
+              `${(data.last_result.execution_info.execution_time_ms / 1000).toFixed(2)}s`
+            )
+          }
+        }
+        
         console.log('[前端日志] [INFO] ========== WorkflowPanel 加载完成（从记录恢复）==========')
       }
     } else {
@@ -1832,6 +2163,9 @@ onMounted(async () => {
   // 添加分隔条拖拽监听
   document.addEventListener('mousemove', handleResize)
   document.addEventListener('mouseup', stopResize)
+  // 添加垂直分隔条拖拽监听
+  document.addEventListener('mousemove', handleVerticalResize)
+  document.addEventListener('mouseup', stopVerticalResize)
 })
 
 onBeforeUnmount(() => {
@@ -1841,10 +2175,17 @@ onBeforeUnmount(() => {
   // 移除分隔条拖拽监听
   document.removeEventListener('mousemove', handleResize)
   document.removeEventListener('mouseup', stopResize)
+  // 移除垂直分隔条拖拽监听
+  document.removeEventListener('mousemove', handleVerticalResize)
+  document.removeEventListener('mouseup', stopVerticalResize)
   // 清理自动保存定时器
   if (autoSaveTimer) {
     clearTimeout(autoSaveTimer)
   }
+  // 清理执行状态轮询定时器
+  stopExecutionPolling()
+  // 清理气泡队列
+  clearBubbleQueue()
 })
 </script>
 
@@ -1854,7 +2195,7 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 12px;
   height: 100%;
-  padding: 16px 20px 16px 16px;
+  padding: 16px 0 16px 16px;
   box-sizing: border-box;
 }
 
@@ -1865,11 +2206,20 @@ onBeforeUnmount(() => {
 }
 
 .panel-body {
-  display: grid;
-  grid-template-columns: 260px 1fr 280px;
+  display: flex;
   gap: 12px;
   flex: 1;
   min-height: 0;
+  padding-right: 0;
+  margin-right: 0;
+}
+
+/* 编辑器和运行窗口的容器 */
+.editor-run-container {
+  display: flex;
+  flex: 1;
+  gap: 0;
+  min-width: 0;
 }
 
 .section-title {
@@ -1897,6 +2247,23 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 8px;
   position: relative;
+  height: 100%;
+  box-sizing: border-box;
+  min-height: 0;
+}
+
+/* 工作流列表固定宽度 */
+.workflow-list {
+  flex-shrink: 0;
+  width: 260px;
+}
+
+/* 运行窗口自动填充剩余空间 */
+.workflow-run {
+  flex: 1 1 400px;
+  min-width: 280px;
+  border-radius: 12px 0 0 12px;
+  border-right: none;
 }
 
 /* 工作流列表表格分隔线暗色主题 */
@@ -2104,6 +2471,39 @@ onBeforeUnmount(() => {
   background: #666;
 }
 
+/* 垂直分隔条 - 调整画布和运行窗口宽度 */
+.vertical-resizer {
+  width: 8px;
+  background: transparent;
+  cursor: ew-resize;
+  position: relative;
+  flex-shrink: 0;
+  transition: background 0.2s;
+  margin: 0 4px;
+  align-self: stretch;
+  z-index: 10;
+}
+
+.vertical-resizer:hover {
+  background: rgba(64, 158, 255, 0.3);
+}
+
+.vertical-resizer::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px;
+  height: 30px;
+  background: #555;
+  border-radius: 1px;
+}
+
+.vertical-resizer:hover::after {
+  background: #409eff;
+}
+
 /* JSON 面板样式 */
 .json-panel {
   display: flex;
@@ -2235,4 +2635,40 @@ onBeforeUnmount(() => {
   border-style: solid;
 }
 
+
+/* 执行中节点高亮动画 - 绿色呼吸灯效果 */
+:deep(.vue-flow__node.node-executing) .workflow-node {
+  border-color: #22c55e !important;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.6), 0 0 20px rgba(34, 197, 94, 0.4), 0 10px 26px rgba(0, 0, 0, 0.35) !important;
+  animation: executing-pulse-green 1.5s ease-in-out infinite;
+}
+
+@keyframes executing-pulse-green {
+  0%, 100% {
+    box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.6), 0 0 20px rgba(34, 197, 94, 0.4), 0 10px 26px rgba(0, 0, 0, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.4), 0 0 30px rgba(34, 197, 94, 0.6), 0 10px 26px rgba(0, 0, 0, 0.35);
+  }
+}
+
+</style>
+
+<!-- 全局样式：执行节点呼吸灯动画 -->
+<style>
+/* VueFlow 节点结构: .vue-flow__node.node-executing > .workflow-node */
+.vue-flow__node.node-executing .workflow-node {
+  border-color: #22c55e !important;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.6), 0 0 20px rgba(34, 197, 94, 0.4), 0 10px 26px rgba(0, 0, 0, 0.35) !important;
+  animation: executing-pulse-green 1.5s ease-in-out infinite;
+}
+
+@keyframes executing-pulse-green {
+  0%, 100% {
+    box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.6), 0 0 20px rgba(34, 197, 94, 0.4), 0 10px 26px rgba(0, 0, 0, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.4), 0 0 30px rgba(34, 197, 94, 0.6), 0 10px 26px rgba(0, 0, 0, 0.35);
+  }
+}
 </style>

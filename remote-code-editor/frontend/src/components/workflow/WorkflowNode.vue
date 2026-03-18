@@ -143,6 +143,10 @@ const props = defineProps({
   selected: {
     type: Boolean,
     default: false
+  },
+  id: {
+    type: String,
+    default: ''
   }
 })
 
@@ -194,11 +198,6 @@ const matchPattern = computed(() => props.data?.config?.matchPattern || '')
 
 // 选中状态 - VueFlow的selected属性在props根级别，不在data里
 const isSelected = computed(() => props.selected === true)
-
-// 监听选中状态变化
-watch(isSelected, (newVal, oldVal) => {
-  console.log('[WorkflowNode] 选中状态变化:', newVal, '节点类型:', nodeType.value, '节点ID:', props.id)
-})
 
 // 多输出节点类型
 const multiOutputNodes = ['branch', 'for_loop']
@@ -272,7 +271,7 @@ onMounted(() => {
 }
 
 /* 选中节点高亮 */
-:deep(.vue-flow__node--selected) .workflow-node {
+::deep(.vue-flow__node--selected) .workflow-node {
   border-color: #ffffff !important;
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.6), 0 10px 26px rgba(0, 0, 0, 0.35) !important;
 }
@@ -412,15 +411,5 @@ onMounted(() => {
 
 .completed-handle {
   background: #64748b !important;
-}
-
-/* 全局选中高亮 */
-.vue-flow__node--selected .workflow-node,
-:deep(.vue-flow__node--selected) .workflow-node,
-.is-selected .workflow-node,
-:deep(.node-multi-selected) .workflow-node,
-.vue-flow__node.node-multi-selected .workflow-node {
-  border-color: #ffffff !important;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.6), 0 10px 26px rgba(0, 0, 0, 0.35) !important;
 }
 </style>

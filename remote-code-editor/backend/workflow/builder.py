@@ -17,6 +17,11 @@ MULTI_OUTPUT_NODES = {
 
 def build_graph(workflow_json: Dict[str, Any]):
     """构建 LangGraph 图"""
+    # 兼容 workflow_json 是字符串的情况
+    if isinstance(workflow_json, str):
+        import json
+        workflow_json = json.loads(workflow_json)
+
     builder = StateGraph(dict)
 
     # 支持新版 v2.0 和旧版 v1.0 格式
@@ -49,13 +54,22 @@ def build_graph(workflow_json: Dict[str, Any]):
     }
 
     # 普通连线
-    for edge in edges:
-        source = str(edge.get('source'))
-        target = str(edge.get('target'))
+    logger.info(f"[Workflow Builder] 开始添加普通边 | edges_count={len(edges)}")
+    for idx, edge in enumerate(edges):
+        source = str(edge.get('source', '')).strip()
+        target = str(edge.get('target', '')).strip()
+        edge_id = edge.get('id', 'unknown')
+        logger.info(f"[Workflow Builder] 边 {idx+1}/{len(edges)} | id={edge_id}, source='{source}', target='{target}'")
+        
+        if not source or not target:
+            logger.warning(f"[Workflow Builder] 跳过无效边 | source='{source}', target='{target}'")
+            continue
+            
         if source in multi_output_nodes:
+            logger.info(f"[Workflow Builder] 跳过多输出节点边 | source={source}")
             continue
         builder.add_edge(source, target)
-        logger.debug(f"[Workflow Builder] 添加普通边: {source} -> {target}")
+        logger.info(f"[Workflow Builder] 已添加边 | {source} -> {target}")
 
     # 多输出节点连线
     for node_id, node in multi_output_nodes.items():
