@@ -10,6 +10,9 @@ _graph_cache: Dict[str, Dict[str, Any]] = {}
 # 执行状态存储：用于实时显示当前执行的节点
 _execution_state: Dict[str, Dict[str, Any]] = {}
 
+# 气泡记录存储
+_bubble_records: Dict[str, list] = {}
+
 
 def get_graph_cache_key(workflow_id: str) -> str:
     return str(workflow_id)
@@ -102,10 +105,6 @@ def clear_execution_state(workflow_id: str) -> None:
     logger.info(f"[Execution State] 清除执行状态 | workflow_id={workflow_id}")
 
 
-# 气泡记录存储
-_bubble_records: Dict[str, list] = {}
-
-
 def add_bubble_record(workflow_id: str, record: Dict[str, Any]) -> None:
     """添加气泡记录"""
     if workflow_id not in _bubble_records:
@@ -125,3 +124,4 @@ def get_bubble_records(workflow_id: str) -> list:
 def clear_bubble_records(workflow_id: str) -> None:
     """清除气泡记录"""
     _bubble_records.pop(workflow_id, None)
+

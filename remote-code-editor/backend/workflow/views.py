@@ -9,10 +9,14 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 from django.forms.models import model_to_dict
 from django.db import transaction
-from .models import Workflow, WorkflowState
+from typing import cast
+from .models import (
+    Workflow,
+    WorkflowState,
+)
 from .validators import validate_workflow_graph
 from .executor import run_workflow_by_id, run_workflow_by_graph
-from .cache import clear_graph_cache
+from .cache import clear_graph_cache, clear_execution_state, get_execution_state, get_bubble_records
 from services.agent_tools import get_tool_names, AGENT_TOOLS
 
 logger = logging.getLogger('workflow')
@@ -179,7 +183,7 @@ def update_workflow(request):
     name = payload.get('name')
     # 添加保存工作流的日志
     logger.info(f"[Workflow] 保存工作流: id={workflow_id}, name={name or workflow.name}, version={workflow.version + 1}")
-    with transaction.atomic():
+    with cast(Any, transaction.atomic()):
         if name:
             workflow.name = str(name)
         # 将 graph 对象序列化为 JSON 字符串存储
@@ -504,7 +508,6 @@ def get_execution_state(request):
         logger.warning(f"[Execution API] 缺少 workflow_id 参数")
         return JsonResponse({'error': '缺少 workflow_id'}, status=400)
 
-    from .cache import get_execution_state, get_bubble_records
     state = get_execution_state(workflow_id)
     bubble_records = get_bubble_records(workflow_id)
 
@@ -539,7 +542,6 @@ def clear_execution_state_api(request):
         logger.warning(f"[Execution API] 清除状态缺少 workflow_id 参数")
         return JsonResponse({'error': '缺少 workflow_id'}, status=400)
     
-    from .cache import clear_execution_state
     clear_execution_state(workflow_id)
     
     logger.info(f"[Execution API] 执行状态已清除 | workflow_id={workflow_id}")

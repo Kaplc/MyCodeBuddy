@@ -8,7 +8,8 @@
     <div v-if="edges.length === 0" class="connection-hint">
       提示：从节点的右侧（输出）拖线到左侧（输入）来连接节点
     </div>
-    <el-input v-model="inputValue" type="textarea" :rows="6" placeholder="输入内容或 JSON" />
+    <el-input ref="inputRef" v-model="inputValue" type="textarea" :rows="6" placeholder="输入内容或 JSON" />
+
     <el-button size="small" type="success" :disabled="isRunning" @click="handleRun">
       {{ isRunning ? '运行中...' : '运行工作流' }}
     </el-button>
@@ -152,6 +153,12 @@ const currentNode = ref('')  // 当前执行的节点ID
 const executionDetails = ref(null)  // 执行详情（迭代次数、状态消息等）
 const bubbleRecords = ref([])  // 气泡流记录
 const bubbleContainer = ref(null)  // 气泡容器DOM引用
+const inputRef = ref(null)  // 输入框DOM引用
+
+// 聚焦输入框
+function focusInput() {
+  inputRef.value?.focus()
+}
 
 // 当前气泡状态 - 用于右侧状态面板显示
 const currentBubbleStatus = ref({
@@ -666,8 +673,10 @@ defineExpose({
   setExecutionDetails,
   addBubbleRecord,
   setBubbleRecords,
-  scrollToBottom
+  scrollToBottom,
+  focusInput
 })
+
 </script>
 
 <style scoped>

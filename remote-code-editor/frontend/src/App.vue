@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="app-container">
     <!-- 顶部栏 -->
     <AppHeader 
@@ -25,9 +25,14 @@
             <el-icon><EditPen /></el-icon>
           </div>
         </el-tooltip>
-        <el-tooltip :content="showWorkflowPanel ? '关闭工作流' : '工作流'" placement="right">
-          <div class="nav-item" :class="{ active: showWorkflowPanel }" @click="toggleWorkflowPanel">
+        <el-tooltip :content="showWorkflowPanel && workflowLaunchMode === 'editor' ? '关闭工作流' : '工作流'" placement="right">
+          <div class="nav-item" :class="{ active: showWorkflowPanel && workflowLaunchMode === 'editor' }" @click="toggleWorkflowPanel">
             <el-icon><TrendCharts /></el-icon>
+          </div>
+        </el-tooltip>
+        <el-tooltip :content="showWorkflowPanel && workflowLaunchMode === 'collaborative' ? '关闭协同执行' : '启动协同执行'" placement="right">
+          <div class="nav-item" :class="{ active: showWorkflowPanel && workflowLaunchMode === 'collaborative' }" @click="toggleCollaborativeExecution">
+            <el-icon><Operation /></el-icon>
           </div>
         </el-tooltip>
         <el-tooltip :content="showAiPanel ? '关闭 AI 对话' : 'AI 对话'" placement="right">
@@ -76,8 +81,19 @@
       </section>
 
       <!-- 工作流编辑器 -->
-      <section v-if="showWorkflowPanel" class="workflow-section" :style="{ flex: editorFlex }">
-        <WorkflowPanel @close="handleWorkflowClose" @workflow-completed="handleWorkflowCompleted" />
+      <section v-if="showWorkflowPanel && workflowLaunchMode === 'editor'" class="workflow-section" :style="{ flex: editorFlex }">
+        <WorkflowPanel
+          @close="handleWorkflowClose"
+          @workflow-completed="handleWorkflowCompleted"
+        />
+      </section>
+
+      <section v-if="showWorkflowPanel && workflowLaunchMode === 'collaborative'" class="workflow-section" :style="{ flex: editorFlex }">
+        <CollaborativeExecution
+          ref="collabExecutionRef"
+          @close="handleWorkflowClose"
+          @workflow-completed="handleWorkflowCompleted"
+        />
       </section>
 
       
@@ -194,7 +210,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Search, FolderOpened, ChatDotRound, Document, Operation, Share, EditPen, TrendCharts } from '@element-plus/icons-vue'
 import axios from 'axios'
@@ -205,6 +221,7 @@ import CodeEditor from './components/CodeEditor.vue'
 import AIChat from './components/AIChat.vue'
 import GitPanel from './components/GitPanel.vue'
 import WorkflowPanel from './components/workflow/WorkflowPanel.vue'
+import CollaborativeExecution from './components/CollaborativeWindow/CollaborativeExecution.vue'
 import AppHeader from './components/AppHeader.vue'
 import StatusBar from './components/StatusBar.vue'
 
@@ -227,6 +244,7 @@ async function sendFrontendLog(level, message, extra = {}) {
 const fileTreeRef = ref(null)
 const codeEditorRef = ref(null)
 const aiChatRef = ref(null)
+const collabExecutionRef = ref(null)
 
 // 状态
 const currentFile = ref(null)
@@ -257,8 +275,10 @@ const editorFlex = ref(1)
 // 面板展开/折叠（从 localStorage 读取状态）
 const showFileTree = ref(localStorage.getItem('showFileTree') !== 'false')
 const showWorkflowPanel = ref(false)
+const workflowLaunchMode = ref('editor')
 const showAiPanel = ref(true)
 const showCodeEditor = ref(true)
+
 
 // 设置
 const showSettings = ref(false)
@@ -352,25 +372,61 @@ function toggleCodeEditor() {
 }
 
 function toggleWorkflowPanel() {
-  const action = showWorkflowPanel.value ? '关闭' : '打开'
+  const shouldClose = showWorkflowPanel.value && workflowLaunchMode.value === 'editor'
+  const action = shouldClose ? '关闭' : '打开'
   sendFrontendLog('info', `点击工作流按钮: ${action}`)
-  if (showWorkflowPanel.value) {
+
+  if (shouldClose) {
     showWorkflowPanel.value = false
     showCodeEditor.value = true
-  } else {
-    showWorkflowPanel.value = true
-    showCodeEditor.value = false
-    // 打开工作流时自动折叠AI助手（仅当AIChat展开时才折叠）
-    if (aiChatRef.value && !aiChatRef.value.isCollapsed) {
-      aiChatRef.value.toggleCollapse()
-    }
+    workflowLaunchMode.value = 'editor'
+    return
   }
+
+  workflowLaunchMode.value = 'editor'
+  showWorkflowPanel.value = true
+  showCodeEditor.value = false
+
+  // 打开工作流时自动折叠AI助手（仅当AIChat展开时才折叠）
+  if (aiChatRef.value && !aiChatRef.value.isCollapsed) {
+    aiChatRef.value.toggleCollapse()
+  }
+}
+
+function toggleCollaborativeExecution() {
+  const shouldClose = showWorkflowPanel.value && workflowLaunchMode.value === 'collaborative'
+  const action = shouldClose ? '关闭' : '打开'
+  sendFrontendLog('info', `点击协同执行按钮: ${action}`)
+
+  if (shouldClose) {
+    showWorkflowPanel.value = false
+    showCodeEditor.value = true
+    workflowLaunchMode.value = 'editor'
+    return
+  }
+
+  workflowLaunchMode.value = 'collaborative'
+  showWorkflowPanel.value = true
+  showCodeEditor.value = false
+
+  if (aiChatRef.value && !aiChatRef.value.isCollapsed) {
+    aiChatRef.value.toggleCollapse()
+  }
+
+  // 打开协同执行面板时，自动恢复上次的会话
+  nextTick(async () => {
+    if (collabExecutionRef.value?.restoreLastSession) {
+      await collabExecutionRef.value.restoreLastSession()
+    }
+  })
 }
 
 function handleWorkflowClose() {
   showWorkflowPanel.value = false
   showCodeEditor.value = true
+  workflowLaunchMode.value = 'editor'
 }
+
 
 // 工作流执行完成后刷新文件树
 async function handleWorkflowCompleted() {
@@ -973,3 +1029,4 @@ body {
   font-weight: 500;
 }
 </style>
+

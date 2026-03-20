@@ -276,6 +276,12 @@ import '@vue-flow/minimap/dist/style.css'
 import 'highlight.js/styles/tokyo-night-dark.css'
 
 const emit = defineEmits(['close', 'workflow-completed'])
+const props = defineProps({
+  launchMode: {
+    type: String,
+    default: 'editor'
+  }
+})
 
 // 工作流列表组件引用
 const workflowListRef = ref(null)
@@ -585,6 +591,8 @@ function onWorkflowRefresh(list) {
   workflowList.value = list
 }
 
+// ==================== 历史方案列表处理函数 ====================
+
 // 清空工作流画布
 function clearWorkflowCanvas() {
   currentWorkflowId.value = ''
@@ -601,12 +609,21 @@ async function loadGraphData(graphData) {
   // 先清空现有的边，避免残留无效边
   edges.value = []
 
-  const nodeIdSet = new Set((data.nodes || []).map(n => String(n.id)))
+  // 获取有效的节点ID集合（字符串形式）
+  const rawNodeIds = (data.nodes || []).map(n => String(n.id))
+  const nodeIdSet = new Set(rawNodeIds)
 
-  const validEdges = (data.edges || []).filter(
-    edge => edge.source && edge.target && nodeIdSet.has(String(edge.source)) && nodeIdSet.has(String(edge.target))
-  )
+  // 过滤出有效的边（确保source和target都指向存在的节点）
+  const validEdges = (data.edges || []).filter(edge => {
+    const sourceId = edge.source != null ? String(edge.source) : null
+    const targetId = edge.target != null ? String(edge.target) : null
+    if (!sourceId || !targetId) return false
+    const sourceExists = nodeIdSet.has(sourceId)
+    const targetExists = nodeIdSet.has(targetId)
+    return sourceExists && targetExists
+  })
 
+  // 转换并设置节点
   nodes.value = (data.nodes || []).map((node, index) => ({
     id: String(node.id),
     type: 'workflow',
@@ -618,19 +635,34 @@ async function loadGraphData(graphData) {
     }
   }))
 
+  // 等待Vue Flow完成节点渲染
   await nextTick()
+  await nextTick() // 双重等待确保节点完全注册
 
-  const newEdges = validEdges.map((edge, index) => ({
-    id: edge.id || `e-${edge.source}-${edge.target}-${index}`,
-    source: String(edge.source),
-    sourceHandle: edge.sourceHandle || edge.source_handle || undefined,
-    target: String(edge.target),
-    targetHandle: edge.targetHandle || edge.target_handle || undefined,
-    label: edge.condition || '',
-    markerEnd: { type: MarkerType.ArrowClosed },
-    style: { stroke: '#ffffff', strokeWidth: 2 },
-    data: { condition: edge.condition || '' }
-  }))
+  // 额外等待确保节点完全注册到Vue Flow内部
+  await new Promise(resolve => setTimeout(resolve, 50))
+
+  // 再次验证当前nodes中存在的ID
+  const currentNodeIds = new Set(nodes.value.map(n => n.id))
+
+  // 创建有效边，确保ID转换正确
+  const newEdges = validEdges
+    .filter(edge => {
+      const sourceId = String(edge.source)
+      const targetId = String(edge.target)
+      return currentNodeIds.has(sourceId) && currentNodeIds.has(targetId)
+    })
+    .map((edge, index) => ({
+      id: edge.id || `e-${edge.source}-${edge.target}-${index}`,
+      source: String(edge.source),
+      sourceHandle: edge.sourceHandle || edge.source_handle || undefined,
+      target: String(edge.target),
+      targetHandle: edge.targetHandle || edge.target_handle || undefined,
+      label: edge.condition || '',
+      markerEnd: { type: MarkerType.ArrowClosed },
+      style: { stroke: '#ffffff', strokeWidth: 2 },
+      data: { condition: edge.condition || '' }
+    }))
 
   if (newEdges.length > 0) {
     addEdges(newEdges)
@@ -642,8 +674,12 @@ async function loadGraphData(graphData) {
 
 // 点击"新建"按钮
 async function handleCreateWorkflowClick() {
+  console.log('[前端日志] [INFO] 点击新建按钮 | workflowListRef:', workflowListRef.value)
   if (workflowListRef.value) {
+    console.log('[前端日志] [INFO] 开始创建工作流 | name:', workflowName.value || '新工作流')
     await workflowListRef.value.handleCreateWorkflow(workflowName.value || '新工作流')
+  } else {
+    console.error('[前端日志] [ERROR] workflowListRef 不存在，无法创建工作流')
   }
 }
 
@@ -1549,103 +1585,206 @@ async function applyGraphJson() {
   }
 }
 
-// 格式化消息内容（带代码高亮）
+// 协同执行协议：执行完整会话（生成主方案 -> 细化 -> 审查 -> 打包 -> 启动 -> 串行执行任务）
+async function runCollaborativeExecution(goalText) {
+  const workflowId = currentWorkflowId.value
+  const workspace = ''
+
+  const { data: planData } = await axios.post('/api/collaboration/plan/generate/', {
+    goal: goalText,
+    workflow_id: workflowId,
+    workspace
+  })
+  if (!planData?.success || !planData?.session_id) {
+    throw new Error(planData?.error || '生成主方案失败')
+  }
+
+  const sessionId = planData.session_id
+  const planNodes = planData.master_plan?.plan_nodes || []
+  const selectedNodeIds = planNodes.map(item => item.id).filter(Boolean)
+
+  const { data: refineData } = await axios.post('/api/collaboration/plan/refine/', {
+    session_id: sessionId,
+    selected_node_ids: selectedNodeIds
+  })
+  if (!refineData?.success) {
+    throw new Error(refineData?.error || '细化方案失败')
+  }
+
+  const refinedNodes = refineData.refined_nodes || []
+  const reviews = refinedNodes.map(item => ({
+    node_id: item.node_id,
+    node_title: item.title || '',
+    detail_plan: item,
+    review_status: 'approved',
+    reviewed_detail_plan: item,
+    require_runtime_approval: !!item.require_runtime_approval,
+    human_comments: []
+  }))
+
+  const { data: reviewData } = await axios.post('/api/collaboration/plan/review/submit/', {
+    session_id: sessionId,
+    reviews
+  })
+  if (!reviewData?.success) {
+    throw new Error(reviewData?.error || '提交审查失败')
+  }
+
+  const { data: packData } = await axios.post('/api/collaboration/execution-pack/build/', {
+    session_id: sessionId
+  })
+  if (!packData?.success) {
+    throw new Error(packData?.error || '构建执行包失败')
+  }
+
+  const { data: startData } = await axios.post('/api/collaboration/executions/start/', {
+    session_id: sessionId
+  })
+  if (!startData?.success) {
+    throw new Error(startData?.error || '启动执行会话失败')
+  }
+
+  const maxRounds = 100
+  let rounds = 0
+  let latestExecuteResult = null
+  let latestState = startData.state || null
+
+  while (rounds < maxRounds) {
+    rounds += 1
+
+    const { data: nextData } = await axios.post('/api/collaboration/tasks/execute-next/', {
+      session_id: sessionId
+    })
+    if (!nextData?.success) {
+      throw new Error(nextData?.error || '执行任务失败')
+    }
+
+    latestExecuteResult = nextData.execute_result || null
+    latestState = nextData.state || latestState
+
+    const status = latestExecuteResult?.status
+    if (status === 'waiting_human') {
+      const pendingAction = latestExecuteResult?.pending_action || {}
+      const message = `任务进入人工审批：${pendingAction.tool_name || '高风险动作'}，请到协同执行面板进行继续/修改后继续/拒绝/终止。`
+      return {
+        sessionId,
+        status: 'waiting_human',
+        message,
+        latestState,
+      }
+    }
+
+    if (status === 'failed') {
+      const failedMsg = latestExecuteResult?.error || '任务执行失败'
+      return {
+        sessionId,
+        status: 'failed',
+        message: failedMsg,
+        latestState,
+      }
+    }
+
+    const summary = latestState?.task_pool_summary || {}
+    const total = Number(summary.total || 0)
+    const finishedCount = Number(summary.done || 0) + Number(summary.failed || 0) + Number(summary.skipped || 0)
+    if (total > 0 && finishedCount >= total) {
+      break
+    }
+
+    if (status === 'idle' && Number(summary.ready || 0) === 0 && Number(summary.running || 0) === 0 && Number(summary.waiting_human || 0) === 0) {
+      break
+    }
+  }
+
+  const { data: detailData } = await axios.get('/api/collaboration/session/detail/', {
+    params: { session_id: sessionId }
+  })
+
+  const tasks = detailData?.tasks || []
+  const lines = tasks.map(item => `- [${item.status}] ${item.task_id} ${item.title}：${item.result_summary || '无摘要'}`)
+
+  return {
+    sessionId,
+    status: 'done',
+    message: [
+      `会话 ${sessionId} 执行完成`,
+      '',
+      '任务结果：',
+      ...lines
+    ].join('\n')
+  }
+}
+
 // 处理工作流运行事件
 async function onWorkflowRun(event) {
   console.log('='.repeat(80))
   console.log('[工作流运行] 开始执行工作流')
   console.log('='.repeat(80))
-  
+
   const { input, buildGraph } = event
   const graph = buildGraph()
 
-  console.log('[工作流运行]    输入:', input)
-  console.log('[工作流运行]    图节点数:', graph.nodes?.length)
-  console.log('[工作流运行]    图边数:', graph.edges?.length)
-  console.log('[工作流运行]    当前工作流ID:', currentWorkflowId.value || '临时工作流')
-
-  const payload = currentWorkflowId.value
-    ? { workflow_id: currentWorkflowId.value, input }
-    : {
-        graph: graph,
-        input
-      }
-
-  console.log('[工作流运行]    请求模式:', currentWorkflowId.value ? '使用已保存的工作流' : '使用临时图数据')
-
-  // 设置运行状态
   if (workflowRunRef.value) {
     workflowRunRef.value.setRunning(true)
-    console.log('[工作流运行] 运行状态已设置')
   }
 
-  // 启动执行状态轮询
-  const workflowIdToPoll = currentWorkflowId.value || 'temp'
-  console.log('[工作流运行] 启动状态轮询 | workflow_id:', workflowIdToPoll)
-  startExecutionPolling(workflowIdToPoll)
-
   try {
-    console.log('[工作流运行] 发送执行请求到后端...')
     const startTime = Date.now()
-    const { data } = await axios.post('/api/workflow/run/', payload)
-    const requestTime = Date.now() - startTime
-    
-    console.log('[工作流运行] 收到后端响应 | 耗时:', requestTime, 'ms')
-    
-    if (data.success && data.result) {
-      // 格式化结果
-      console.log('[工作流运行] 执行成功')
-      console.log('[工作流运行]    执行时间:', data.execution_info?.execution_time_ms, 'ms')
-      console.log('[工作流运行]    节点数:', data.execution_info?.node_count)
-      console.log('[工作流运行]    边数:', data.execution_info?.edge_count)
-      
-      if (workflowRunRef.value) {
-        workflowRunRef.value.formatAndSetResult(
-          data.result,
-          data.execution_info?.execution_time_ms,
-          data.iterations || []
-        )
+
+    if (currentWorkflowId.value) {
+      const goalText = typeof input === 'string' ? input : JSON.stringify(input, null, 2)
+      const collaborativeResult = await runCollaborativeExecution(goalText || '完成用户目标')
+      const elapsed = Date.now() - startTime
+
+      if (collaborativeResult.status === 'done') {
+        workflowRunRef.value?.formatAndSetResult(collaborativeResult.message, elapsed, [])
+        ElMessage.success('协同执行完成')
+        emit('workflow-completed')
+      } else if (collaborativeResult.status === 'waiting_human') {
+        workflowRunRef.value?.setError(collaborativeResult.message)
+        ElMessage.warning('执行暂停：等待人工审批')
+      } else {
+        workflowRunRef.value?.setError(collaborativeResult.message)
+        ElMessage.error('协同执行失败: ' + collaborativeResult.message)
       }
+
+      return
+    }
+
+    // 无 workflow_id 时保留旧执行路径（临时图）
+    const payload = {
+      graph,
+      input
+    }
+
+    const { data } = await axios.post('/api/workflow/run/', payload)
+    if (data.success && data.result) {
+      workflowRunRef.value?.formatAndSetResult(
+        data.result,
+        data.execution_info?.execution_time_ms,
+        data.iterations || []
+      )
       ElMessage.success('工作流执行成功')
-      
-      // 工作流执行成功后，通知父组件刷新文件树
       emit('workflow-completed')
     } else if (data.error) {
-      console.error('[工作流运行] 执行失败 | error:', data.error)
-      if (workflowRunRef.value) {
-        workflowRunRef.value.setError(data.error)
-      }
+      workflowRunRef.value?.setError(data.error)
       ElMessage.error('执行失败: ' + data.error)
     }
   } catch (error) {
-    console.error('='.repeat(80))
-    console.error('[工作流运行] 请求异常')
-    console.error('='.repeat(80))
-    console.error('[工作流运行]    错误:', error.message)
-    console.error('[工作流运行]    响应:', error.response?.data)
-    console.error('[工作流运行]    堆栈:', error.stack)
-    
     const errorMsg = error.response?.data?.error || error.message || '未知错误'
-    if (workflowRunRef.value) {
-      workflowRunRef.value.setError('执行失败: ' + errorMsg)
-    }
+    workflowRunRef.value?.setError('执行失败: ' + errorMsg)
     ElMessage.error('工作流执行失败: ' + errorMsg)
   } finally {
-    // 停止执行状态轮询
-    console.log('[工作流运行] 停止状态轮询')
-    stopExecutionPolling()
-    
-    // 运行结束
     if (workflowRunRef.value) {
       workflowRunRef.value.setRunning(false)
-      console.log('[工作流运行] 运行状态已清除')
     }
-    
+
     console.log('='.repeat(80))
     console.log('[工作流运行] 工作流执行流程结束')
     console.log('='.repeat(80))
   }
 }
+
 
 async function handleSaveWorkflow() {
   if (!currentWorkflowId.value) {
@@ -1680,6 +1819,20 @@ watch([nodes, edges], () => {
   syncGraphJson()
   triggerAutoSave()
 }, { deep: true })
+
+watch(
+  () => props.launchMode,
+  async (mode) => {
+    if (mode !== 'collaborative') {
+      return
+    }
+    await nextTick()
+    workflowRunRef.value?.focusInput?.()
+    ElMessage.info('协同执行模式已就绪：请输入目标后点击“运行工作流”')
+  },
+  { immediate: true }
+)
+
 
 // 防抖函数 - 避免频繁触发应用配置
 let debounceTimer = null

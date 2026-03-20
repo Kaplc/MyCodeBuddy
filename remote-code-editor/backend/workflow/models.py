@@ -1,6 +1,20 @@
 """Workflow 数据模型"""
 import json
+from typing import Any
 from django.db import models
+
+
+def _json_loads(value: str, default: Any):
+    if not value:
+        return default
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return default
+
+
+def _json_dumps(value: Any):
+    return json.dumps(value, ensure_ascii=False)
 
 
 class Workflow(models.Model):
@@ -17,37 +31,27 @@ class Workflow(models.Model):
 
     def get_graph(self):
         """获取图定义（自动反序列化）"""
-        return json.loads(self.graph or '{}')
+        return _json_loads(self.graph, {})
 
     def set_graph(self, value):
         """设置图定义（自动序列化）"""
-        self.graph = json.dumps(value, ensure_ascii=False)
+        self.graph = _json_dumps(value)
 
     def get_last_result(self):
         """获取上次执行结果（自动反序列化）"""
-        if not self.last_result:
-            return None
-        try:
-            return json.loads(self.last_result)
-        except json.JSONDecodeError:
-            return None
+        return _json_loads(self.last_result, None)
 
     def set_last_result(self, value):
         """设置执行结果（自动序列化）"""
-        self.last_result = json.dumps(value, ensure_ascii=False)
+        self.last_result = _json_dumps(value)
 
     def get_bubble_records(self):
         """获取气泡流记录（自动反序列化）"""
-        if not self.bubble_records:
-            return []
-        try:
-            return json.loads(self.bubble_records)
-        except json.JSONDecodeError:
-            return []
+        return _json_loads(self.bubble_records, [])
 
     def set_bubble_records(self, value):
         """设置气泡流记录（自动序列化）"""
-        self.bubble_records = json.dumps(value, ensure_ascii=False)
+        self.bubble_records = _json_dumps(value)
 
     def add_bubble_record(self, record):
         """添加单条气泡记录"""

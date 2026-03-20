@@ -34,9 +34,21 @@ self.MonacoEnvironment = {
 // 配置 axios
 axios.defaults.baseURL = API_CONFIG.BASE_URL
 
+// 添加请求拦截器用于调试
+axios.interceptors.request.use(
+  config => {
+    console.log(`[Axios Request] ${config.method.toUpperCase()} ${config.url}`, config.data)
+    return config
+  },
+  error => Promise.reject(error)
+)
+
 // 配置 axios 拦截器，添加错误处理
 axios.interceptors.response.use(
-  response => response,
+  response => {
+    console.log(`[Axios Response] ${response.status}`, response.data)
+    return response
+  },
   error => {
     console.error('API 请求错误:', error)
     return Promise.reject(error)

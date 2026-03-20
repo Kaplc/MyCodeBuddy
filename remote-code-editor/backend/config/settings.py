@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     # 本地应用
     'api',
     'workflow',
+    'collaboration',
 ]
 
 # 中间件
@@ -205,6 +206,11 @@ LOGGING = {
             'propagate': False,
         },
         'workflow': {
+            'handlers': ['console', 'file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'collaboration': {
             'handlers': ['console', 'file'],
             'level': 'INFO',
             'propagate': False,
